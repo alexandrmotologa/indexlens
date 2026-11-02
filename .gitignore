@@ -5,7 +5,7 @@
 *.so
 *.dylib
 bin/
-dist/
+/dist/
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,6 +23,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 web/dist/
+web/node_modules/
 
 # Environment files
 .env
