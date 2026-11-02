@@ -16,6 +16,101 @@ export interface QueryStat {
   tempBlksRead: number;
   tempBlksWritten: number;
   cacheHitRatio: number; // percentage
+  p50ExecTime?: number;
+  p90ExecTime?: number;
+  p95ExecTime?: number;
+  p99ExecTime?: number;
+  jitterScore?: number;
+  jitterLevel?: 'STABLE' | 'MODERATE' | 'SPIKY';
+  antiPatterns?: SQLAntiPattern[];
+}
+
+export interface SQLAntiPattern {
+  type: string;
+  severity: 'CRITICAL' | 'WARNING' | 'SUGGESTION';
+  snippet: string;
+  message: string;
+  rewriteAdvice: string;
+  suggestedDdl?: string;
+}
+
+export interface ConfigSetting {
+  name: string;
+  currentValue: string;
+  recommendedValue: string;
+  unit: string;
+  category: string;
+  restartRequired: boolean;
+  reason: string;
+  status: 'OPTIMAL' | 'ATTENTION' | 'CRITICAL';
+  alterDdl: string;
+}
+
+export interface TuningProfile {
+  totalRamGb: number;
+  vcpus: number;
+  diskType: 'NVMe' | 'SSD' | 'HDD';
+  workloadType: 'OLTP' | 'WEB' | 'DW' | 'MIXED';
+}
+
+export interface TuningReport {
+  profile: TuningProfile;
+  settings: ConfigSetting[];
+  optimalCount: number;
+  attentionCount: number;
+  alterScript: string;
+}
+
+export interface UnindexedForeignKey {
+  constraintName: string;
+  childTable: string;
+  parentTable: string;
+  columns: string[];
+  suggestedDdl: string;
+  severity: 'CRITICAL' | 'WARNING';
+  reason: string;
+}
+
+export interface TableMissingPK {
+  schemaName: string;
+  tableName: string;
+  estimatedRows: number;
+  totalSizePretty: string;
+  suggestedDdl: string;
+}
+
+export interface ToastRelationInfo {
+  tableName: string;
+  toastTableName: string;
+  mainSizeBytes: number;
+  toastSizeBytes: number;
+  mainSizePretty: string;
+  toastSizePretty: string;
+  toastRatio: number;
+  recommendation: string;
+}
+
+export interface SchemaHealthReport {
+  unindexedFks: UnindexedForeignKey[];
+  missingPks: TableMissingPK[];
+  toastRelations: ToastRelationInfo[];
+  totalIssues: number;
+  healthScore: number;
+}
+
+export interface ConnectionPoolHealth {
+  totalConnections: number;
+  maxConnections: number;
+  utilizationPercent: number;
+  activeCount: number;
+  idleCount: number;
+  idleInTxCount: number;
+  maxIdleInTxDuration: number;
+  stateBreakdown: Record<string, number>;
+  optimalPoolSize: number;
+  status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+  warnings: string[];
+  pgBouncerAdvice: string;
 }
 
 export interface TableStat {

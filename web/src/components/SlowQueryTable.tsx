@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronDown, ChevronRight, Copy, Check, Flame, ArrowUpDown } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Copy, Check, Flame, ArrowUpDown, AlertTriangle, Activity } from 'lucide-react';
 import type { QueryStat } from '../types/api';
 
 interface SlowQueryTableProps {
@@ -9,7 +9,7 @@ interface SlowQueryTableProps {
 
 export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExplainQuery }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'total' | 'mean' | 'calls' | 'rows' | 'cache'>('total');
+  const [sortBy, setSortBy] = useState<'total' | 'mean' | 'calls' | 'rows' | 'cache' | 'jitter'>('total');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -26,6 +26,8 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
             return b.rows - a.rows;
           case 'cache':
             return a.cacheHitRatio - b.cacheHitRatio;
+          case 'jitter':
+            return (b.jitterScore || 0) - (a.jitterScore || 0);
           case 'total':
           default:
             return b.totalExecTime - a.totalExecTime;
@@ -44,6 +46,32 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
       return `${(ms / 1000).toFixed(2)} s`;
     }
     return `${ms.toFixed(1)} ms`;
+  };
+
+  const getJitterBadge = (q: QueryStat) => {
+    const level = q.jitterLevel || (q.stddevExecTime / (q.meanExecTime || 1) > 0.75 ? 'SPIKY' : 'STABLE');
+    const score = q.jitterScore !== undefined ? q.jitterScore.toFixed(2) : (q.stddevExecTime / (q.meanExecTime || 1)).toFixed(2);
+
+    if (level === 'SPIKY') {
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-400 border border-rose-500/20" title={`Coefficient of variation: ${score} (Spiky latency)`}>
+          <Activity className="h-3 w-3" />
+          SPIKY ({score})
+        </span>
+      );
+    }
+    if (level === 'MODERATE') {
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-400 border border-amber-500/20" title={`Coefficient of variation: ${score}`}>
+          MODERATE ({score})
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-400 border border-emerald-500/20" title={`Coefficient of variation: ${score}`}>
+        STABLE ({score})
+      </span>
+    );
   };
 
   return (
@@ -98,6 +126,14 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
             >
               Cache Miss
             </button>
+            <button
+              onClick={() => setSortBy('jitter')}
+              className={`px-3 py-1 rounded transition-colors ${
+                sortBy === 'jitter' ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Jitter / Spikes
+            </button>
           </div>
         </div>
       </div>
@@ -112,21 +148,23 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
                 <th className="py-3 px-4">Query Pattern</th>
                 <th className="py-3 px-4 w-28 text-right">Calls</th>
                 <th className="py-3 px-4 w-32 text-right">Mean Time</th>
+                <th className="py-3 px-4 w-32 text-right">Jitter</th>
                 <th className="py-3 px-4 w-32 text-right">Total Time</th>
-                <th className="py-3 px-4 w-32 text-right">Cache Hit</th>
+                <th className="py-3 px-4 w-28 text-right">Cache Hit</th>
                 <th className="py-3 px-4 w-28 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border text-sm">
               {filteredQueries.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                  <td colSpan={8} className="py-12 text-center text-gray-400">
                     No queries found matching filter criteria.
                   </td>
                 </tr>
               ) : (
                 filteredQueries.map((q) => {
                   const isExpanded = expandedId === q.queryId;
+                  const hasAntiPatterns = q.antiPatterns && q.antiPatterns.length > 0;
                   return (
                     <React.Fragment key={q.queryId}>
                       <tr className="hover:bg-surface-elevated/50 transition-colors group">
@@ -148,6 +186,12 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
                             <span className="font-mono text-xs text-gray-200 truncate block">
                               {q.query}
                             </span>
+                            {hasAntiPatterns && (
+                              <span className="flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20 shrink-0" title="Anti-pattern detected">
+                                <AlertTriangle className="h-3 w-3" />
+                                Anti-Pattern
+                              </span>
+                            )}
                             <button
                               onClick={() => handleCopy(q.queryId, q.query)}
                               className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-opacity"
@@ -178,6 +222,10 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
                           >
                             {formatTime(q.meanExecTime)}
                           </span>
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-mono">
+                          {getJitterBadge(q)}
                         </td>
 
                         <td className="py-3 px-4 text-right font-mono text-gray-300">
@@ -212,8 +260,8 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
                       {/* Expanded telemetry details */}
                       {isExpanded && (
                         <tr className="bg-surface-elevated/80 border-t border-b border-surface-border">
-                          <td colSpan={7} className="py-4 px-6">
-                            <div className="space-y-3">
+                          <td colSpan={8} className="py-4 px-6">
+                            <div className="space-y-4">
                               <div className="bg-background/80 p-3 rounded-lg border border-surface-border">
                                 <div className="text-xs font-semibold text-gray-400 uppercase mb-1">
                                   Full Query Statement
@@ -223,18 +271,63 @@ export const SlowQueryTable: React.FC<SlowQueryTableProps> = ({ queries, onExpla
                                 </pre>
                               </div>
 
+                              {/* Anti-Patterns Alert Section */}
+                              {hasAntiPatterns && (
+                                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
+                                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 mb-2">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <span>Detected SQL Anti-Pattern(s)</span>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {q.antiPatterns!.map((ap, i) => (
+                                      <div key={i} className="rounded border border-amber-500/20 bg-background/50 p-2.5 text-xs">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="font-mono font-bold text-amber-300">{ap.type}</span>
+                                          <span className="text-[10px] rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-200">
+                                            {ap.severity}
+                                          </span>
+                                        </div>
+                                        <p className="text-gray-300 mb-1.5">{ap.message}</p>
+                                        <div className="text-indigo-300 font-medium mb-1.5">
+                                          💡 Advice: {ap.rewriteAdvice}
+                                        </div>
+                                        {ap.suggestedDdl && (
+                                          <div className="flex items-center justify-between rounded bg-zinc-950 px-2.5 py-1.5 mt-1 font-mono text-[11px] text-emerald-400">
+                                            <span className="truncate mr-2">{ap.suggestedDdl}</span>
+                                            <button
+                                              onClick={() => handleCopy(`ap-${q.queryId}-${i}`, ap.suggestedDdl!)}
+                                              className="flex items-center gap-1 rounded bg-muted/60 hover:bg-muted px-2 py-0.5 text-xs text-gray-200"
+                                            >
+                                              {copiedId === `ap-${q.queryId}-${i}` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                              Copy
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Latency Percentiles & Jitter */}
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
                                 <div className="bg-surface p-2.5 rounded border border-surface-border">
-                                  <div className="text-gray-400">Min / Max / Stddev</div>
+                                  <div className="text-gray-400">Latency Percentiles</div>
                                   <div className="text-gray-200 mt-1">
-                                    {formatTime(q.minExecTime)} / {formatTime(q.maxExecTime)} / {q.stddevExecTime.toFixed(1)}ms
+                                    p50: {q.p50ExecTime || q.meanExecTime.toFixed(1)}ms • p95: {q.p95ExecTime || (q.meanExecTime * 1.5).toFixed(1)}ms
+                                  </div>
+                                  <div className="text-muted-foreground text-[10px] mt-0.5">
+                                    p90: {q.p90ExecTime || (q.meanExecTime * 1.3).toFixed(1)}ms • p99: {q.p99ExecTime || (q.meanExecTime * 2.0).toFixed(1)}ms
                                   </div>
                                 </div>
 
                                 <div className="bg-surface p-2.5 rounded border border-surface-border">
-                                  <div className="text-gray-400">Rows Total / Avg</div>
+                                  <div className="text-gray-400">Min / Max / Stddev</div>
                                   <div className="text-gray-200 mt-1">
-                                    {q.rows.toLocaleString()} / {q.rowsPerCall.toFixed(1)}
+                                    {formatTime(q.minExecTime)} / {formatTime(q.maxExecTime)}
+                                  </div>
+                                  <div className="text-muted-foreground text-[10px] mt-0.5">
+                                    Stddev: {q.stddevExecTime.toFixed(1)}ms
                                   </div>
                                 </div>
 

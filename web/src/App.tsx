@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { Header } from './components/Header';
+import { Header, type TabKey } from './components/Header';
 import { SlowQueryTable } from './components/SlowQueryTable';
 import { ExplainVisualizer } from './components/ExplainVisualizer';
 import { IndexAdvisorCard } from './components/IndexAdvisorCard';
 import { LockContentionView } from './components/LockContentionView';
 import { BloatWatchdog } from './components/BloatWatchdog';
 import { CacheHitGauge } from './components/CacheHitGauge';
+import { ConfigTuner } from './components/ConfigTuner';
+import { SchemaHealthView } from './components/SchemaHealthView';
+import { ConnectionPoolView } from './components/ConnectionPoolView';
 import { useStats } from './hooks/useStats';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache'>('queries');
+  const [activeTab, setActiveTab] = useState<TabKey>('queries');
   const [explainPrefill, setExplainPrefill] = useState('');
 
   const {
@@ -22,10 +25,14 @@ export function App() {
     bloatList,
     vacuumWorkers,
     wraparound,
+    tuningReport,
+    schemaHealth,
+    connectionPool,
     explainResult,
     planDiff,
     isRefreshing,
     refreshAll,
+    fetchTuning,
     analyzePlan,
     executeQuery,
     comparePlans,
@@ -87,6 +94,18 @@ export function App() {
 
         {activeTab === 'cache' && (
           <CacheHitGauge stats={cacheStats} />
+        )}
+
+        {activeTab === 'tuner' && (
+          <ConfigTuner report={tuningReport} onProfileChange={fetchTuning} />
+        )}
+
+        {activeTab === 'schema' && (
+          <SchemaHealthView report={schemaHealth} />
+        )}
+
+        {activeTab === 'pool' && (
+          <ConnectionPoolView health={connectionPool} />
         )}
       </main>
 

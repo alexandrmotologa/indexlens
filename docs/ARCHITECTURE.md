@@ -81,7 +81,31 @@ Maintains database health invariants:
 - **Autovacuum Worker Tracking**: Reads `pg_stat_progress_vacuum` to display live progress and current vacuum phases.
 - **Transaction ID Wraparound**: Monitors `age(datfrozenxid)` against `autovacuum_freeze_max_age` (200 million threshold).
 
-### 5. Web Studio (`web/`)
+### 5. Hardware & Configuration Tuner (`internal/poller/config_tuner.go`)
+Calculates optimal system configuration based on RAM, vCPU count, and storage characteristics:
+- Calculates `shared_buffers` (25% of RAM, capped at 16GB), `effective_cache_size` (75% of RAM), `work_mem` (connection-scaled), and `maintenance_work_mem`.
+- Sets `random_page_cost` and `effective_io_concurrency` for NVMe/SSD vs HDD storage media.
+- Emits reproducible, idempotent `ALTER SYSTEM SET` commands and configuration reload statements.
+
+### 6. Schema Health Auditor (`internal/poller/schema_health.go`)
+Inspects relational invariants to prevent locking and performance anomalies:
+- **Unindexed Foreign Keys**: Inspects `pg_constraint` against `pg_index` to flag foreign key constraints lacking supporting child indexes. Prevents `ShareRowExclusiveLock` on parent row mutations.
+- **Tables Missing Primary Keys**: Identifies user tables without declared primary keys, which hinders logical replication and unique tuple addressing.
+- **TOAST Relation Analysis**: Identifies tables where variable-length attributes (JSONB, TEXT) occupy excessive out-of-line storage, advising LZ4 column compression.
+
+### 7. Connection Pool & Saturation Health (`internal/poller/connection_pool.go`)
+Monitors client socket lifecycle and saturation:
+- Calculates connection saturation against `max_connections`.
+- Alerts on long-lived `idle in transaction` sockets holding snapshots that impede autovacuum garbage collection.
+- Recommends optimal PgBouncer connection bounds using the $(2 \times \text{vCPUs}) + \text{Disks}$ formula.
+
+### 8. SQL Anti-Pattern Analyzer (`internal/explain/anti_patterns.go`)
+Detects query construction flaws that invalidate B-Tree lookups:
+- Functions called on indexed columns (e.g. `lower(email) = ...`), synthesizing expression indexes.
+- Leading wildcards in `LIKE` / `ILIKE` patterns, recommending PostgreSQL's `pg_trgm` GIN indexes.
+- Deep `OFFSET` pagination, suggesting keyset pagination with indexed cursors.
+
+### 9. Web Studio (`web/`)
 Built with React 19, TypeScript, Lucide Icons, and Tailwind CSS:
 - Zero external SaaS dependencies; operates entirely on the local network or inside secure VPCs.
 - Includes a built-in offline telemetry demo mode for development, testing, and evaluation without a live PostgreSQL instance.

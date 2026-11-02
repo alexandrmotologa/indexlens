@@ -155,3 +155,8 @@ indexlens/
 - [x] **Phase 10: Plan Diff & Regression Engine**: Baseline vs Current plan comparison with structural and timing deltas.
 - [x] **Phase 11: HypoPG In-Memory Verification & Index Sizing**: B-Tree byte sizing formula and HypoPG simulation.
 - [x] **Phase 12: CI/CD Quality Gate & Report Exporter**: CLI `check` command with exit codes and Markdown report generation.
+- [x] **Phase 13: PostgreSQL Configuration & Hardware Tuner**: Interactive RAM/vCPU/Disk optimizer with copyable `ALTER SYSTEM SET` script.
+- [x] **Phase 14: Schema Health & Relational Anti-Pattern Auditor**: Unindexed foreign keys, tables missing primary keys, and TOAST relation bloat.
+- [x] **Phase 15: Query Latency Distribution & Jitter Detection**: $p50, p90, p95, p99$ latency percentiles and coefficient-of-variation jitter spikes.
+- [x] **Phase 16: Connection Pool & Saturation Health**: Client state breakdown, idle-in-transaction leak alerts, and optimal PgBouncer pool sizing.
+- [x] **Phase 17: SQL Anti-Pattern Rewriter**: Automated detection and remediation of functions on indexed columns, leading wildcards, and deep OFFSET pagination.

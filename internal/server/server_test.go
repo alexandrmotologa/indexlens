@@ -106,6 +106,35 @@ func TestServerEndpointsInDemoMode(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantSubstr: `# IndexLens PostgreSQL Performance`,
 		},
+		{
+			name:       "Config tuning",
+			method:     "GET",
+			url:        "/api/config/tuning?ramGb=32&vcpus=8&disk=NVMe&workload=OLTP",
+			wantStatus: http.StatusOK,
+			wantSubstr: `shared_buffers`,
+		},
+		{
+			name:       "Schema health",
+			method:     "GET",
+			url:        "/api/schema/health",
+			wantStatus: http.StatusOK,
+			wantSubstr: `unindexedFks`,
+		},
+		{
+			name:       "Connection pool",
+			method:     "GET",
+			url:        "/api/connections/pool",
+			wantStatus: http.StatusOK,
+			wantSubstr: `optimalPoolSize`,
+		},
+		{
+			name:       "Query anti-patterns POST",
+			method:     "POST",
+			url:        "/api/queries/anti-patterns",
+			body:       `{"query":"SELECT * FROM users WHERE lower(email) = 'test@example.com'"}`,
+			wantStatus: http.StatusOK,
+			wantSubstr: `FUNCTION_ON_INDEX_COLUMN`,
+		},
 	}
 
 	for _, tt := range tests {

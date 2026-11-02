@@ -55,6 +55,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/autovacuum", s.handleAutovacuum)
 	s.mux.HandleFunc("GET /api/bloat", s.handleBloat)
 	s.mux.HandleFunc("GET /api/report/markdown", s.handleReportMarkdown)
+	s.mux.HandleFunc("GET /api/config/tuning", s.handleConfigTuning)
+	s.mux.HandleFunc("POST /api/config/tuning", s.handleConfigTuning)
+	s.mux.HandleFunc("GET /api/schema/health", s.handleSchemaHealth)
+	s.mux.HandleFunc("GET /api/connections/pool", s.handleConnectionPool)
+	s.mux.HandleFunc("POST /api/queries/anti-patterns", s.handleQueryAntiPatterns)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -474,6 +479,142 @@ func (s *Server) handleReportMarkdown(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="indexlens_report.md"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(md.String()))
+}
+
+type tuningRequest struct {
+	TotalRAMGB   float64 `json:"totalRamGb"`
+	VCPUs        int     `json:"vcpus"`
+	DiskType     string  `json:"diskType"`
+	WorkloadType string  `json:"workloadType"`
+}
+
+func (s *Server) handleConfigTuning(w http.ResponseWriter, r *http.Request) {
+	var profile model.TuningProfile
+	profile.TotalRAMGB = 32.0
+	profile.VCPUs = 8
+	profile.DiskType = "NVMe"
+	profile.WorkloadType = "OLTP"
+
+	if r.Method == http.MethodPost {
+		body, err := io.ReadAll(r.Body)
+		if err == nil && len(body) > 0 {
+			var req tuningRequest
+			if err := json.Unmarshal(body, &req); err == nil {
+				if req.TotalRAMGB > 0 {
+					profile.TotalRAMGB = req.TotalRAMGB
+				}
+				if req.VCPUs > 0 {
+					profile.VCPUs = req.VCPUs
+				}
+				if req.DiskType != "" {
+					profile.DiskType = req.DiskType
+				}
+				if req.WorkloadType != "" {
+					profile.WorkloadType = req.WorkloadType
+				}
+			}
+		}
+	} else {
+		// Read from query params
+		if ramStr := r.URL.Query().Get("ramGb"); ramStr != "" {
+			if v, err := strconv.ParseFloat(ramStr, 64); err == nil && v > 0 {
+				profile.TotalRAMGB = v
+			}
+		}
+		if cpuStr := r.URL.Query().Get("vcpus"); cpuStr != "" {
+			if v, err := strconv.Atoi(cpuStr); err == nil && v > 0 {
+				profile.VCPUs = v
+			}
+		}
+		if disk := r.URL.Query().Get("disk"); disk != "" {
+			profile.DiskType = disk
+		}
+		if wl := r.URL.Query().Get("workload"); wl != "" {
+			profile.WorkloadType = wl
+		}
+	}
+
+	if s.demoMode || s.client == nil {
+		report := model.GetDemoTuningReport(profile)
+		writeJSON(w, http.StatusOK, report)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	liveSettings, err := s.client.GetLiveSettings(ctx)
+	if err != nil {
+		// Fallback to calculation without live settings
+		liveSettings = make(map[string]string)
+	}
+
+	report := poller.CalculateTuning(profile, liveSettings)
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) handleSchemaHealth(w http.ResponseWriter, r *http.Request) {
+	if s.demoMode || s.client == nil {
+		writeJSON(w, http.StatusOK, model.GetDemoSchemaHealth())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	report, err := s.client.GetSchemaHealthReport(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to audit schema health: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) handleConnectionPool(w http.ResponseWriter, r *http.Request) {
+	vcpus := 4
+	if cpuStr := r.URL.Query().Get("vcpus"); cpuStr != "" {
+		if v, err := strconv.Atoi(cpuStr); err == nil && v > 0 {
+			vcpus = v
+		}
+	}
+
+	if s.demoMode || s.client == nil {
+		writeJSON(w, http.StatusOK, model.GetDemoConnectionPoolHealth())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	poolHealth, err := s.client.GetConnectionPoolHealth(ctx, vcpus)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to inspect connection pool: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, poolHealth)
+}
+
+type antiPatternRequest struct {
+	Query string `json:"query"`
+}
+
+func (s *Server) handleQueryAntiPatterns(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var req antiPatternRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		return
+	}
+
+	patterns := explain.AnalyzeSQLAntiPatterns(req.Query)
+	writeJSON(w, http.StatusOK, patterns)
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, data any) {

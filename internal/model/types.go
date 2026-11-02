@@ -22,7 +22,14 @@ type QueryStat struct {
 	LocalBlksRead     int64   `json:"localBlksRead"`
 	TempBlksRead      int64   `json:"tempBlksRead"`
 	TempBlksWritten   int64   `json:"tempBlksWritten"`
-	CacheHitRatio     float64 `json:"cacheHitRatio"` // percentage (0.0 to 100.0)
+	CacheHitRatio     float64          `json:"cacheHitRatio"` // percentage (0.0 to 100.0)
+	P50ExecTime       float64          `json:"p50ExecTime"`   // ms
+	P90ExecTime       float64          `json:"p90ExecTime"`   // ms
+	P95ExecTime       float64          `json:"p95ExecTime"`   // ms
+	P99ExecTime       float64          `json:"p99ExecTime"`   // ms
+	JitterScore       float64          `json:"jitterScore"`   // stddev / mean
+	JitterLevel       string           `json:"jitterLevel"`   // STABLE, MODERATE, SPIKY
+	AntiPatterns      []SQLAntiPattern `json:"antiPatterns"`
 }
 
 // TableStat captures sequential vs index scans, tuple counts, and bloat signals.
@@ -277,4 +284,101 @@ type SystemOverview struct {
 	BloatWarningCount       int     `json:"bloatWarningCount"`
 	WraparoundSafetyPercent float64 `json:"wraparoundSafetyPercent"`
 	ActiveAutovacuums       int     `json:"activeAutovacuums"`
+}
+
+// SQLAntiPattern defines common sub-optimal query construction and remediation.
+type SQLAntiPattern struct {
+	Type          string `json:"type"`          // FUNCTION_ON_INDEX_COLUMN, LEADING_WILDCARD, DEEP_OFFSET, SELECT_STAR
+	Severity      string `json:"severity"`      // CRITICAL, WARNING, SUGGESTION
+	Snippet       string `json:"snippet"`       // offending SQL fragment
+	Message       string `json:"message"`       // explanation of performance penalty
+	RewriteAdvice string `json:"rewriteAdvice"` // concrete rewritten SQL advice
+	SuggestedDDL  string `json:"suggestedDdl,omitempty"` // CREATE INDEX CONCURRENTLY or extension DDL
+}
+
+// ConfigSetting represents a tuned or active PostgreSQL server parameter.
+type ConfigSetting struct {
+	Name             string `json:"name"`
+	CurrentValue     string `json:"currentValue"`
+	RecommendedValue string `json:"recommendedValue"`
+	Unit             string `json:"unit"`
+	Category         string `json:"category"` // Memory, Query Planner, WAL, Concurrency
+	RestartRequired  bool   `json:"restartRequired"`
+	Reason           string `json:"reason"`
+	Status           string `json:"status"` // OPTIMAL, ATTENTION, CRITICAL
+	AlterDDL         string `json:"alterDdl"`
+}
+
+// TuningProfile defines the hardware capacity and workload shape.
+type TuningProfile struct {
+	TotalRAMGB   float64 `json:"totalRamGb"`
+	VCPUs        int     `json:"vcpus"`
+	DiskType     string  `json:"diskType"`     // NVMe, SSD, HDD
+	WorkloadType string  `json:"workloadType"` // WEB, OLTP, DW, MIXED
+}
+
+// TuningReport aggregates recommended configuration settings against current database state.
+type TuningReport struct {
+	Profile        TuningProfile   `json:"profile"`
+	Settings       []ConfigSetting `json:"settings"`
+	OptimalCount   int             `json:"optimalCount"`
+	AttentionCount int             `json:"attentionCount"`
+	AlterScript    string          `json:"alterScript"`
+}
+
+// UnindexedForeignKey identifies child foreign key constraints lacking supporting B-Tree indexes.
+type UnindexedForeignKey struct {
+	ConstraintName string   `json:"constraintName"`
+	ChildTable     string   `json:"childTable"`
+	ParentTable    string   `json:"parentTable"`
+	Columns        []string `json:"columns"`
+	SuggestedDDL   string   `json:"suggestedDdl"`
+	Severity       string   `json:"severity"` // CRITICAL, WARNING
+	Reason         string   `json:"reason"`
+}
+
+// TableMissingPK identifies relations operating without a declared Primary Key.
+type TableMissingPK struct {
+	SchemaName      string `json:"schemaName"`
+	TableName       string `json:"tableName"`
+	EstimatedRows   int64  `json:"estimatedRows"`
+	TotalSizePretty string `json:"totalSizePretty"`
+	SuggestedDDL    string `json:"suggestedDdl"`
+}
+
+// ToastRelationInfo details oversized TOAST storage ratios relative to heap tables.
+type ToastRelationInfo struct {
+	TableName       string  `json:"tableName"`
+	ToastTableName  string  `json:"toastTableName"`
+	MainSizeBytes   int64   `json:"mainSizeBytes"`
+	ToastSizeBytes  int64   `json:"toastSizeBytes"`
+	MainSizePretty  string  `json:"mainSizePretty"`
+	ToastSizePretty string  `json:"toastSizePretty"`
+	ToastRatio      float64 `json:"toastRatio"` // percentage (toast / total)
+	Recommendation  string  `json:"recommendation"`
+}
+
+// SchemaHealthReport combines missing foreign key indexes, missing primary keys, and TOAST bloat.
+type SchemaHealthReport struct {
+	UnindexedFKs   []UnindexedForeignKey `json:"unindexedFks"`
+	MissingPKs     []TableMissingPK      `json:"missingPks"`
+	ToastRelations []ToastRelationInfo   `json:"toastRelations"`
+	TotalIssues    int                   `json:"totalIssues"`
+	HealthScore    int                   `json:"healthScore"` // 0 to 100
+}
+
+// ConnectionPoolHealth captures connection state saturation and sizing efficiency.
+type ConnectionPoolHealth struct {
+	TotalConnections    int            `json:"totalConnections"`
+	MaxConnections      int            `json:"maxConnections"`
+	UtilizationPercent  float64        `json:"utilizationPercent"`
+	ActiveCount         int            `json:"activeCount"`
+	IdleCount           int            `json:"idleCount"`
+	IdleInTxCount       int            `json:"idleInTxCount"`
+	MaxIdleInTxDuration float64        `json:"maxIdleInTxDuration"` // seconds
+	StateBreakdown      map[string]int `json:"stateBreakdown"`
+	OptimalPoolSize     int            `json:"optimalPoolSize"`
+	Status              string         `json:"status"` // HEALTHY, WARNING, CRITICAL
+	Warnings            []string       `json:"warnings"`
+	PgBouncerAdvice     string         `json:"pgBouncerAdvice"`
 }

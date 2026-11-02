@@ -31,6 +31,12 @@ func GetDemoQueries() []QueryStat {
 			MinExecTime:       12.4,
 			MaxExecTime:       2840.1,
 			StddevExecTime:    48.2,
+			P50ExecTime:       122.4,
+			P90ExecTime:       193.7,
+			P95ExecTime:       211.3,
+			P99ExecTime:       244.2,
+			JitterScore:       0.365,
+			JitterLevel:       "MODERATE",
 			Rows:              922500,
 			RowsPerCall:       50.0,
 			SharedBlksHit:     1845000,
@@ -40,6 +46,7 @@ func GetDemoQueries() []QueryStat {
 			TempBlksRead:      4200,
 			TempBlksWritten:   4200,
 			CacheHitRatio:     65.2,
+			AntiPatterns:      nil,
 		},
 		{
 			QueryID:           "8493021948201",
@@ -50,6 +57,12 @@ func GetDemoQueries() []QueryStat {
 			MinExecTime:       5.1,
 			MaxExecTime:       1240.5,
 			StddevExecTime:    22.8,
+			P50ExecTime:       40.4,
+			P90ExecTime:       74.2,
+			P95ExecTime:       82.5,
+			P99ExecTime:       98.0,
+			JitterScore:       0.507,
+			JitterLevel:       "MODERATE",
 			Rows:              1263000,
 			RowsPerCall:       30.0,
 			SharedBlksHit:     3450000,
@@ -59,6 +72,7 @@ func GetDemoQueries() []QueryStat {
 			TempBlksRead:      0,
 			TempBlksWritten:   0,
 			CacheHitRatio:     84.8,
+			AntiPatterns:      nil,
 		},
 		{
 			QueryID:           "1928301928401",
@@ -68,7 +82,13 @@ func GetDemoQueries() []QueryStat {
 			MeanExecTime:      408.5,
 			MinExecTime:       85.0,
 			MaxExecTime:       4910.0,
-			StddevExecTime:    98.4,
+			StddevExecTime:    340.2,
+			P50ExecTime:       340.5,
+			P90ExecTime:       844.0,
+			P95ExecTime:       968.1,
+			P99ExecTime:       1199.7,
+			JitterScore:       0.833,
+			JitterLevel:       "SPIKY",
 			Rows:              72000,
 			RowsPerCall:       30.0,
 			SharedBlksHit:     1250000,
@@ -78,6 +98,7 @@ func GetDemoQueries() []QueryStat {
 			TempBlksRead:      18500,
 			TempBlksWritten:   18500,
 			CacheHitRatio:     73.5,
+			AntiPatterns:      nil,
 		},
 		{
 			QueryID:           "7192830192834",
@@ -87,7 +108,13 @@ func GetDemoQueries() []QueryStat {
 			MeanExecTime:      2.5,
 			MinExecTime:       0.3,
 			MaxExecTime:       210.0,
-			StddevExecTime:    4.1,
+			StddevExecTime:    0.4,
+			P50ExecTime:       2.4,
+			P90ExecTime:       3.0,
+			P95ExecTime:       3.2,
+			P99ExecTime:       3.4,
+			JitterScore:       0.160,
+			JitterLevel:       "STABLE",
 			Rows:              350000,
 			RowsPerCall:       1.0,
 			SharedBlksHit:     2800000,
@@ -97,6 +124,7 @@ func GetDemoQueries() []QueryStat {
 			TempBlksRead:      0,
 			TempBlksWritten:   0,
 			CacheHitRatio:     99.5,
+			AntiPatterns:      nil,
 		},
 		{
 			QueryID:           "5918273645102",
@@ -107,6 +135,12 @@ func GetDemoQueries() []QueryStat {
 			MinExecTime:       1.2,
 			MaxExecTime:       840.0,
 			StddevExecTime:    11.2,
+			P50ExecTime:       6.8,
+			P90ExecTime:       23.3,
+			P95ExecTime:       27.4,
+			P99ExecTime:       35.1,
+			JitterScore:       1.244,
+			JitterLevel:       "SPIKY",
 			Rows:              850000,
 			RowsPerCall:       10.0,
 			SharedBlksHit:     1900000,
@@ -116,6 +150,84 @@ func GetDemoQueries() []QueryStat {
 			TempBlksRead:      0,
 			TempBlksWritten:   0,
 			CacheHitRatio:     90.0,
+			AntiPatterns:      nil,
+		},
+		{
+			QueryID:           "9102837461928",
+			Query:             "SELECT id, email, created_at FROM users WHERE lower(email) = $1 LIMIT 1",
+			Calls:             64000,
+			TotalExecTime:     640000.0,
+			MeanExecTime:      10.0,
+			MinExecTime:       0.8,
+			MaxExecTime:       420.0,
+			StddevExecTime:    9.4,
+			P50ExecTime:       8.1,
+			P90ExecTime:       22.0,
+			P95ExecTime:       25.5,
+			P99ExecTime:       31.9,
+			JitterScore:       0.940,
+			JitterLevel:       "SPIKY",
+			Rows:              64000,
+			RowsPerCall:       1.0,
+			SharedBlksHit:     320000,
+			SharedBlksRead:    180000,
+			SharedBlksDirtied: 0,
+			SharedBlksWritten: 0,
+			TempBlksRead:      0,
+			TempBlksWritten:   0,
+			CacheHitRatio:     64.0,
+			AntiPatterns: []SQLAntiPattern{
+				{
+					Type:          "FUNCTION_ON_INDEX_COLUMN",
+					Severity:      "CRITICAL",
+					Snippet:       "lower(email) =",
+					Message:       "Calling function 'lower' on column 'email' invalidates standard B-Tree index lookups and causes full sequential scans.",
+					RewriteAdvice: "Either store normalized values in 'email' or create an expression index to accelerate this filter.",
+					SuggestedDDL:  "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_expr_users_email ON users (lower(email));",
+				},
+			},
+		},
+		{
+			QueryID:           "4819203948172",
+			Query:             "SELECT id, name, sku FROM products WHERE name ILIKE '%phone%' ORDER BY id ASC LIMIT 50 OFFSET 15000",
+			Calls:             12500,
+			TotalExecTime:     562500.0,
+			MeanExecTime:      45.0,
+			MinExecTime:       4.5,
+			MaxExecTime:       920.0,
+			StddevExecTime:    38.5,
+			P50ExecTime:       37.3,
+			P90ExecTime:       94.3,
+			P95ExecTime:       108.3,
+			P99ExecTime:       134.5,
+			JitterScore:       0.855,
+			JitterLevel:       "SPIKY",
+			Rows:              625000,
+			RowsPerCall:       50.0,
+			SharedBlksHit:     410000,
+			SharedBlksRead:    220000,
+			SharedBlksDirtied: 0,
+			SharedBlksWritten: 0,
+			TempBlksRead:      0,
+			TempBlksWritten:   0,
+			CacheHitRatio:     65.1,
+			AntiPatterns: []SQLAntiPattern{
+				{
+					Type:          "LEADING_WILDCARD",
+					Severity:      "CRITICAL",
+					Snippet:       "name ILIKE '%phone%'",
+					Message:       "Leading wildcard pattern '%phone%' prevents B-Tree bisection, forcing table scans or expensive full index scans.",
+					RewriteAdvice: "For substring and suffix matching, utilize PostgreSQL's pg_trgm extension with a GIN index instead of plain LIKE.",
+					SuggestedDDL:  "CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE INDEX CONCURRENTLY IF NOT EXISTS idx_gin_products_name ON products USING gin (name gin_trgm_ops);",
+				},
+				{
+					Type:          "DEEP_OFFSET",
+					Severity:      "WARNING",
+					Snippet:       "OFFSET 15000",
+					Message:       "Deep OFFSET of 15000 rows forces PostgreSQL to read and discard all prior rows, causing severe buffer churn and disk IO.",
+					RewriteAdvice: "Switch from numeric OFFSET to Keyset (Seek) Pagination using indexed cursor columns (e.g. WHERE id > :last_seen_id ORDER BY id ASC LIMIT :page_size).",
+				},
+			},
 		},
 	}
 }
@@ -670,12 +782,279 @@ func GetDemoOverview() SystemOverview {
 		ActiveConnections:       48,
 		MaxConnections:          200,
 		BufferCacheHitRatio:     97.2,
-		TotalQueriesTracked:     5,
+		TotalQueriesTracked:     7,
 		UnderIndexedTablesCount: 3,
 		UnusedIndexesCount:      3,
 		ActiveLocksCount:        14,
 		BloatWarningCount:       2,
 		WraparoundSafetyPercent: 72.9,
 		ActiveAutovacuums:       2,
+	}
+}
+
+// GetDemoTuningReport returns realistic configuration tuning recommendations.
+func GetDemoTuningReport(profile TuningProfile) TuningReport {
+	if profile.TotalRAMGB <= 0 {
+		profile.TotalRAMGB = 32
+	}
+	if profile.VCPUs <= 0 {
+		profile.VCPUs = 8
+	}
+	if profile.DiskType == "" {
+		profile.DiskType = "NVMe"
+	}
+	if profile.WorkloadType == "" {
+		profile.WorkloadType = "OLTP"
+	}
+
+	settings := []ConfigSetting{
+		{
+			Name:             "shared_buffers",
+			CurrentValue:     "128MB",
+			RecommendedValue: "8192MB",
+			Unit:             "MB",
+			Category:         "Memory",
+			RestartRequired:  true,
+			Reason:           "Allocates 25% of system RAM to PostgreSQL dedicated page cache, preventing kernel context-switch stalls.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET shared_buffers = '8192MB';",
+		},
+		{
+			Name:             "effective_cache_size",
+			CurrentValue:     "4096MB",
+			RecommendedValue: "24576MB",
+			Unit:             "MB",
+			Category:         "Memory",
+			RestartRequired:  false,
+			Reason:           "Planner assumption for total memory available for disk caching (PostgreSQL buffer cache + OS page cache).",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET effective_cache_size = '24576MB';",
+		},
+		{
+			Name:             "work_mem",
+			CurrentValue:     "4MB",
+			RecommendedValue: "81MB",
+			Unit:             "MB",
+			Category:         "Memory",
+			RestartRequired:  false,
+			Reason:           "Allocated per sort/hash operation before spilling temporary files to disk. Sized for concurrency without OOM risk.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET work_mem = '81MB';",
+		},
+		{
+			Name:             "maintenance_work_mem",
+			CurrentValue:     "64MB",
+			RecommendedValue: "2048MB",
+			Unit:             "MB",
+			Category:         "Memory",
+			RestartRequired:  false,
+			Reason:           "Accelerates VACUUM, CREATE INDEX, and ALTER TABLE foreign key validations.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET maintenance_work_mem = '2048MB';",
+		},
+		{
+			Name:             "checkpoint_completion_target",
+			CurrentValue:     "0.5",
+			RecommendedValue: "0.9",
+			Unit:             "ratio",
+			Category:         "WAL",
+			RestartRequired:  false,
+			Reason:           "Spreads dirty page write I/O across 90% of the checkpoint duration, eliminating I/O spikes.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET checkpoint_completion_target = '0.9';",
+		},
+		{
+			Name:             "wal_buffers",
+			CurrentValue:     "4MB",
+			RecommendedValue: "64MB",
+			Unit:             "MB",
+			Category:         "WAL",
+			RestartRequired:  true,
+			Reason:           "Dedicates buffer space for unwritten WAL data, avoiding disk write bottlenecks during concurrent transactions.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET wal_buffers = '64MB';",
+		},
+		{
+			Name:             "random_page_cost",
+			CurrentValue:     "4.0",
+			RecommendedValue: "1.1",
+			Unit:             "ratio",
+			Category:         "Query Planner",
+			RestartRequired:  false,
+			Reason:           "Cost estimate for non-sequential disk reads. 1.1 reflects fast flash/NVMe storage random access.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET random_page_cost = '1.1';",
+		},
+		{
+			Name:             "effective_io_concurrency",
+			CurrentValue:     "1",
+			RecommendedValue: "200",
+			Unit:             "requests",
+			Category:         "Query Planner",
+			RestartRequired:  false,
+			Reason:           "Allows asynchronous prefetching of heap pages during bitmap index scans.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET effective_io_concurrency = '200';",
+		},
+		{
+			Name:             "max_worker_processes",
+			CurrentValue:     "8",
+			RecommendedValue: "8",
+			Unit:             "workers",
+			Category:         "Parallelism",
+			RestartRequired:  true,
+			Reason:           "Caps background workers to match system physical cores for optimal parallel query execution.",
+			Status:           "OPTIMAL",
+			AlterDDL:         "ALTER SYSTEM SET max_worker_processes = '8';",
+		},
+		{
+			Name:             "max_parallel_workers_per_gather",
+			CurrentValue:     "2",
+			RecommendedValue: "4",
+			Unit:             "workers",
+			Category:         "Parallelism",
+			RestartRequired:  false,
+			Reason:           "Maximum parallel threads spawned for a single parallel query node.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET max_parallel_workers_per_gather = '4';",
+		},
+		{
+			Name:             "max_parallel_maintenance_workers",
+			CurrentValue:     "2",
+			RecommendedValue: "4",
+			Unit:             "workers",
+			Category:         "Parallelism",
+			RestartRequired:  false,
+			Reason:           "Parallel threads for CREATE INDEX and autovacuum operations.",
+			Status:           "ATTENTION",
+			AlterDDL:         "ALTER SYSTEM SET max_parallel_maintenance_workers = '4';",
+		},
+	}
+
+	alterScript := `-- IndexLens Generated PostgreSQL Hardware Tuning Script
+-- Profile: 32 GB RAM, 8 vCPUs, NVMe storage, OLTP workload
+
+ALTER SYSTEM SET shared_buffers = '8192MB';
+ALTER SYSTEM SET effective_cache_size = '24576MB';
+ALTER SYSTEM SET work_mem = '81MB';
+ALTER SYSTEM SET maintenance_work_mem = '2048MB';
+ALTER SYSTEM SET checkpoint_completion_target = '0.9';
+ALTER SYSTEM SET wal_buffers = '64MB';
+ALTER SYSTEM SET random_page_cost = '1.1';
+ALTER SYSTEM SET effective_io_concurrency = '200';
+ALTER SYSTEM SET max_worker_processes = '8';
+ALTER SYSTEM SET max_parallel_workers_per_gather = '4';
+ALTER SYSTEM SET max_parallel_maintenance_workers = '4';
+
+-- Apply reloadable parameters:
+SELECT pg_reload_conf();
+`
+
+	return TuningReport{
+		Profile:        profile,
+		Settings:       settings,
+		OptimalCount:   1,
+		AttentionCount: 10,
+		AlterScript:    alterScript,
+	}
+}
+
+// GetDemoSchemaHealth returns sample unindexed foreign keys, missing primary keys, and TOAST bloat.
+func GetDemoSchemaHealth() SchemaHealthReport {
+	return SchemaHealthReport{
+		UnindexedFKs: []UnindexedForeignKey{
+			{
+				ConstraintName: "fk_order_items_order_id",
+				ChildTable:     "order_items",
+				ParentTable:    "orders",
+				Columns:        []string{"order_id"},
+				SuggestedDDL:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fk_order_items_order_id ON order_items (order_id);",
+				Severity:       "CRITICAL",
+				Reason:         "Lacks supporting index on child table 'order_items'. Modifications or deletes on parent table 'orders' will acquire ShareRowExclusiveLock and trigger full sequential scans.",
+			},
+			{
+				ConstraintName: "fk_audit_logs_user_id",
+				ChildTable:     "audit_logs",
+				ParentTable:    "users",
+				Columns:        []string{"user_id"},
+				SuggestedDDL:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fk_audit_logs_user_id ON audit_logs (user_id);",
+				Severity:       "CRITICAL",
+				Reason:         "Lacks supporting index on child table 'audit_logs'. Deleting user records will perform a sequential scan across 4.8M audit log tuples.",
+			},
+			{
+				ConstraintName: "fk_payments_subscription_id",
+				ChildTable:     "payments",
+				ParentTable:    "subscriptions",
+				Columns:        []string{"subscription_id"},
+				SuggestedDDL:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fk_payments_subscription_id ON payments (subscription_id);",
+				Severity:       "CRITICAL",
+				Reason:         "Foreign key without index. Concurrent subscription billing updates experience lock queues.",
+			},
+		},
+		MissingPKs: []TableMissingPK{
+			{
+				SchemaName:      "public",
+				TableName:       "event_logs",
+				EstimatedRows:   1450000,
+				TotalSizePretty: "420 MB",
+				SuggestedDDL:    "ALTER TABLE public.event_logs ADD PRIMARY KEY (id);",
+			},
+			{
+				SchemaName:      "public",
+				TableName:       "cache_store",
+				EstimatedRows:   85000,
+				TotalSizePretty: "28 MB",
+				SuggestedDDL:    "ALTER TABLE public.cache_store ADD PRIMARY KEY (key);",
+			},
+		},
+		ToastRelations: []ToastRelationInfo{
+			{
+				TableName:       "user_profiles",
+				ToastTableName:  "pg_toast_16421",
+				MainSizeBytes:   120 * 1024 * 1024,
+				ToastSizeBytes:  840 * 1024 * 1024,
+				MainSizePretty:  "120 MB",
+				ToastSizePretty: "840 MB",
+				ToastRatio:      87.5,
+				Recommendation:  "High out-of-line storage ratio (87.5%). Wide JSONB documents cause detached disk seeks. Consider enabling LZ4 column compression (ALTER TABLE user_profiles SET COMPRESSION lz4).",
+			},
+			{
+				TableName:       "raw_documents",
+				ToastTableName:  "pg_toast_16590",
+				MainSizeBytes:   310 * 1024 * 1024,
+				ToastSizeBytes:  2100 * 1024 * 1024,
+				MainSizePretty:  "310 MB",
+				ToastSizePretty: "2.1 GB",
+				ToastRatio:      87.1,
+				Recommendation:  "High out-of-line storage ratio. Consider offloading binary files or raw markdown payloads to object storage.",
+			},
+		},
+		TotalIssues: 5,
+		HealthScore: 55,
+	}
+}
+
+// GetDemoConnectionPoolHealth returns sample connection saturation and PgBouncer recommendations.
+func GetDemoConnectionPoolHealth() ConnectionPoolHealth {
+	return ConnectionPoolHealth{
+		TotalConnections:    142,
+		MaxConnections:      200,
+		UtilizationPercent:  71.0,
+		ActiveCount:         38,
+		IdleCount:           94,
+		IdleInTxCount:       10,
+		MaxIdleInTxDuration: 840.0,
+		StateBreakdown: map[string]int{
+			"active":              38,
+			"idle":                94,
+			"idle in transaction": 10,
+		},
+		OptimalPoolSize: 17,
+		Status:          "WARNING",
+		Warnings: []string{
+			"Moderate connection saturation (71.0% of max_connections).",
+			"Detected 10 connection(s) 'idle in transaction' for up to 840 seconds. Long-lived transactions block vacuum tuple cleanup and risk table bloat.",
+		},
+		PgBouncerAdvice: "Current client connection count (142) significantly exceeds hardware sweet spot (17). Deploy PgBouncer in transaction pooling mode to cap server backends at 17 and slash CPU context switching.",
 	}
 }

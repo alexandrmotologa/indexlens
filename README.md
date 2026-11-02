@@ -13,6 +13,11 @@ IndexLens is a non-invasive PostgreSQL slow query explainer, autovacuum watchdog
 - **Live Lock Contention Tracker**: Inspects `pg_stat_activity` and `pg_locks` to map root blocker transactions, blocked waiting queries, and idle-in-transaction connections.
 - **Table Bloat & Autovacuum Watchdog**: Calculates dead tuple ratios, estimates wasted disk space from MVCC update churn, tracks running `pg_stat_progress_vacuum` phases, and alerts before Transaction ID (TxID) Wraparound limits are reached.
 - **HypoPG In-Memory Verification**: Simulates hypothetical indexes using the `hypopg` extension to prove planner cost reduction before running physical index builds.
+- **Hardware & PostgreSQL Configuration Tuner**: Calibrates `shared_buffers`, `work_mem`, `effective_cache_size`, `random_page_cost`, and worker counts against physical RAM, vCPU cores, and disk speed, outputting an `ALTER SYSTEM SET` script.
+- **Schema Health & Relational Anti-Pattern Auditor**: Detects unindexed foreign keys that cause table locks during deletes, identifies tables missing primary keys, and flags high out-of-line TOAST relations.
+- **Query Latency Distribution & Jitter Detection**: Calculates p50, p90, p95, and p99 latency percentiles alongside the coefficient of variation to spot volatile queries suffering from lock or disk jitter.
+- **Connection Pool & Saturation Health**: Tracks active vs idle connection ratios, flags long-lived `idle in transaction` queries, and calculates optimal PgBouncer pool sizing using physical core counts.
+- **SQL Anti-Pattern Rewriter**: Identifies function calls on indexed columns (`lower(email)`), unindexed leading wildcards (`LIKE '%term%'`), and deep `OFFSET` pagination, providing concrete rewrite patterns and expression index DDL.
 - **Local-First Web Studio & CI/CD Gate**: Interactive React 19 interface served directly from the Go binary without external cloud dependencies. Includes an automated `check` command for CI/CD pipelines and 1-click Markdown report exports.
 
 ## Architecture
@@ -107,6 +112,15 @@ IndexLens provides a suite of terminal commands for diagnostics and automation:
 # Inspect real-time lock contention and blocking query trees
 ./indexlens locks --dsn "postgres://..."
 
+# Calculate hardware-tailored postgresql.conf settings and ALTER SYSTEM script
+./indexlens tune --ram-gb 32 --vcpus 8 --disk NVMe --workload OLTP
+
+# Audit unindexed foreign keys, missing primary keys, and TOAST bloat
+./indexlens schema --dsn "postgres://..."
+
+# Inspect connection saturation, idle-in-tx leaks, and PgBouncer sizing
+./indexlens pool --dsn "postgres://..." --vcpus 8
+
 # Estimate table dead tuples and disk bloat
 ./indexlens bloat --dsn "postgres://..."
 
@@ -136,6 +150,10 @@ When running `indexlens serve`, the internal API exposes the following endpoints
 | `/api/activity/locks` | GET | Active connections, wait events, and blocking dependency trees |
 | `/api/autovacuum` | GET | Running autovacuum workers and TxID wraparound safety horizon |
 | `/api/bloat` | GET | Table and index bloat estimates |
+| `/api/config/tuning` | GET/POST | Recommended postgresql.conf settings and copyable ALTER SYSTEM script |
+| `/api/schema/health` | GET | Audit of unindexed foreign keys, tables missing primary keys, and TOAST bloat |
+| `/api/connections/pool` | GET | Saturation analysis, idle-in-tx leak detection, and PgBouncer sizing |
+| `/api/queries/anti-patterns` | POST | Identifies SQL anti-patterns (e.g. lower(col), leading wildcard, deep offset) |
 | `/api/report/markdown` | GET | Generates downloadable Markdown incident / audit report |
 
 ## Documentation

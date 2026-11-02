@@ -1,11 +1,13 @@
 import React from 'react';
-import { Database, Flame, Zap, ShieldAlert, Layers, RefreshCw, Lock, Download } from 'lucide-react';
+import { Database, Flame, Zap, ShieldAlert, Layers, RefreshCw, Lock, Download, Sliders, ShieldCheck, Network } from 'lucide-react';
 import type { SystemOverview } from '../types/api';
+
+export type TabKey = 'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache' | 'tuner' | 'schema' | 'pool';
 
 interface HeaderProps {
   overview: SystemOverview | null;
-  activeTab: 'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache';
-  setActiveTab: (tab: 'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache') => void;
+  activeTab: TabKey;
+  setActiveTab: (tab: TabKey) => void;
   onRefresh: () => void;
   onExportReport: () => void;
   isRefreshing: boolean;
@@ -131,6 +133,42 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Database className="w-4 h-4" />
               <span>Buffer Cache</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('tuner')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'tuner'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-surface-elevated hover:text-white'
+              }`}
+            >
+              <Sliders className="w-4 h-4" />
+              <span>Tuner</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('schema')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'schema'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-surface-elevated hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Schema Health</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('pool')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'pool'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-surface-elevated hover:text-white'
+              }`}
+            >
+              <Network className="w-4 h-4" />
+              <span>Pool</span>
             </button>
           </nav>
 

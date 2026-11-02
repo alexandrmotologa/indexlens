@@ -12,6 +12,10 @@ import type {
   BloatInfo,
   AutovacuumWorker,
   WraparoundInfo,
+  TuningReport,
+  TuningProfile,
+  SchemaHealthReport,
+  ConnectionPoolHealth,
 } from '../types/api';
 
 export function useStats() {
@@ -24,6 +28,9 @@ export function useStats() {
   const [bloatList, setBloatList] = useState<BloatInfo[]>([]);
   const [vacuumWorkers, setVacuumWorkers] = useState<AutovacuumWorker[]>([]);
   const [wraparound, setWraparound] = useState<WraparoundInfo | null>(null);
+  const [tuningReport, setTuningReport] = useState<TuningReport | null>(null);
+  const [schemaHealth, setSchemaHealth] = useState<SchemaHealthReport | null>(null);
+  const [connectionPool, setConnectionPool] = useState<ConnectionPoolHealth | null>(null);
   const [explainResult, setExplainResult] = useState<ExplainAnalysisResult | null>(null);
   const [planDiff, setPlanDiff] = useState<PlanDiffResult | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -95,6 +102,43 @@ export function useStats() {
     }
   }, []);
 
+  const fetchTuning = useCallback(async (customProfile?: TuningProfile) => {
+    try {
+      const profile = customProfile || {
+        totalRamGb: 32,
+        vcpus: 8,
+        diskType: 'NVMe',
+        workloadType: 'OLTP',
+      };
+      const res = await fetch('/api/config/tuning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      });
+      if (res.ok) setTuningReport(await res.json());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
+  const fetchSchemaHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/schema/health');
+      if (res.ok) setSchemaHealth(await res.json());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
+  const fetchConnectionPool = useCallback(async () => {
+    try {
+      const res = await fetch('/api/connections/pool');
+      if (res.ok) setConnectionPool(await res.json());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setIsRefreshing(true);
     await Promise.all([
@@ -104,9 +148,22 @@ export function useStats() {
       fetchRecommendations(),
       fetchLockContention(),
       fetchBloatAndAutovacuum(),
+      fetchTuning(),
+      fetchSchemaHealth(),
+      fetchConnectionPool(),
     ]);
     setIsRefreshing(false);
-  }, [fetchOverview, fetchQueries, fetchCache, fetchRecommendations, fetchLockContention, fetchBloatAndAutovacuum]);
+  }, [
+    fetchOverview,
+    fetchQueries,
+    fetchCache,
+    fetchRecommendations,
+    fetchLockContention,
+    fetchBloatAndAutovacuum,
+    fetchTuning,
+    fetchSchemaHealth,
+    fetchConnectionPool,
+  ]);
 
   useEffect(() => {
     refreshAll();
@@ -210,11 +267,17 @@ export function useStats() {
     bloatList,
     vacuumWorkers,
     wraparound,
+    tuningReport,
+    schemaHealth,
+    connectionPool,
     explainResult,
     planDiff,
     isRefreshing,
     error,
     refreshAll,
+    fetchTuning,
+    fetchSchemaHealth,
+    fetchConnectionPool,
     analyzePlan,
     executeQuery,
     comparePlans,

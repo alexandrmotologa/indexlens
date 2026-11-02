@@ -47,6 +47,12 @@ func main() {
 		runCheck(args)
 	case "report":
 		runReport(args)
+	case "tune":
+		runTune(args)
+	case "schema":
+		runSchema(args)
+	case "pool":
+		runPool(args)
 	case "version", "-v", "--version":
 		fmt.Printf("IndexLens v%s (PostgreSQL Diagnostics & Index Synthesizer)\n", version)
 	case "help", "-h", "--help":
@@ -71,6 +77,9 @@ Core Commands:
   advice    Synthesize non-blocking CREATE INDEX CONCURRENTLY recommendations
   unused    Detect zero-scan and redundant indexes with safe DROP DDL
   locks     Inspect real-time lock contention and blocking processes
+  tune      Calculate hardware-tailored postgresql.conf settings and ALTER SYSTEM script
+  schema    Audit unindexed foreign keys, tables missing primary keys, and TOAST bloat
+  pool      Inspect connection saturation, idle-in-tx leaks, and PgBouncer sizing
   check     Automated CI/CD health verification with exit codes
   report    Generate a comprehensive Markdown audit report
   version   Display version information
@@ -546,4 +555,155 @@ func maskDSN(dsn string) string {
 		return "postgres://***@" + parts[1]
 	}
 	return "postgres://..."
+}
+
+func runTune(args []string) {
+	fs := flag.NewFlagSet("tune", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN to inspect current settings")
+	ramGB := fs.Float64("ram-gb", 32.0, "Total system RAM in GB")
+	vcpus := fs.Int("vcpus", 8, "Number of available CPU cores")
+	disk := fs.String("disk", "NVMe", "Storage type (NVMe, SSD, HDD)")
+	workload := fs.String("workload", "OLTP", "Workload type (OLTP, WEB, DW, MIXED)")
+	output := fs.String("output", "", "Optional file path to write ALTER SYSTEM script")
+	_ = fs.Parse(args)
+
+	profile := model.TuningProfile{
+		TotalRAMGB:   *ramGB,
+		VCPUs:        *vcpus,
+		DiskType:     *disk,
+		WorkloadType: *workload,
+	}
+
+	currentSettings := make(map[string]string)
+	if *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		client, err := poller.NewClient(ctx, *dsn)
+		if err == nil {
+			defer client.Close()
+			currentSettings, _ = client.GetLiveSettings(ctx)
+		}
+	}
+
+	report := poller.CalculateTuning(profile, currentSettings)
+
+	fmt.Printf("\n=== PostgreSQL Hardware Tuning Profile ===\n")
+	fmt.Printf("Hardware: %.0f GB RAM | %d vCPUs | %s Storage | %s Workload\n\n",
+		profile.TotalRAMGB, profile.VCPUs, profile.DiskType, profile.WorkloadType)
+
+	fmt.Printf("%-32s %-12s %-12s %-10s %s\n", "PARAMETER", "CURRENT", "RECOMMENDED", "RESTART?", "CATEGORY")
+	fmt.Println(strings.Repeat("-", 80))
+	for _, s := range report.Settings {
+		restartStr := "No"
+		if s.RestartRequired {
+			restartStr = "Yes"
+		}
+		fmt.Printf("%-32s %-12s %-12s %-10s %s\n", s.Name, s.CurrentValue, s.RecommendedValue, restartStr, s.Category)
+	}
+
+	fmt.Println("\n=== Generated ALTER SYSTEM Script ===")
+	fmt.Println(report.AlterScript)
+
+	if *output != "" {
+		if err := os.WriteFile(*output, []byte(report.AlterScript), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to write script: %v\n", err)
+		} else {
+			fmt.Printf("Script saved to %s\n", *output)
+		}
+	}
+}
+
+func runSchema(args []string) {
+	fs := flag.NewFlagSet("schema", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	demo := fs.Bool("demo", false, "Use demo data")
+	_ = fs.Parse(args)
+
+	var report model.SchemaHealthReport
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+		report, _ = client.GetSchemaHealthReport(ctx)
+	} else {
+		report = model.GetDemoSchemaHealth()
+	}
+
+	fmt.Printf("\n=== IndexLens Schema Health Audit (Score: %d/100) ===\n\n", report.HealthScore)
+
+	if len(report.UnindexedFKs) > 0 {
+		fmt.Printf("Detected %d Unindexed Foreign Key(s):\n", len(report.UnindexedFKs))
+		for i, fk := range report.UnindexedFKs {
+			fmt.Printf("[%d] %s -> %s (%s)\n", i+1, fk.ChildTable, fk.ParentTable, strings.Join(fk.Columns, ", "))
+			fmt.Printf("    Reason: %s\n", fk.Reason)
+			fmt.Printf("    Fix DDL: %s\n\n", fk.SuggestedDDL)
+		}
+	} else {
+		fmt.Println("✓ No unindexed foreign keys found.")
+	}
+
+	if len(report.MissingPKs) > 0 {
+		fmt.Printf("Detected %d Table(s) Missing Primary Keys:\n", len(report.MissingPKs))
+		for i, pk := range report.MissingPKs {
+			fmt.Printf("[%d] %s.%s (~%d rows, %s)\n", i+1, pk.SchemaName, pk.TableName, pk.EstimatedRows, pk.TotalSizePretty)
+			fmt.Printf("    Fix DDL: %s\n\n", pk.SuggestedDDL)
+		}
+	} else {
+		fmt.Println("✓ All surveyed tables have primary keys.")
+	}
+
+	if len(report.ToastRelations) > 0 {
+		fmt.Printf("Detected %d Relation(s) with Significant TOAST Storage:\n", len(report.ToastRelations))
+		for i, t := range report.ToastRelations {
+			fmt.Printf("[%d] Table '%s': Main %s | TOAST %s (%.1f%% of relation)\n",
+				i+1, t.TableName, t.MainSizePretty, t.ToastSizePretty, t.ToastRatio)
+			fmt.Printf("    Advice: %s\n\n", t.Recommendation)
+		}
+	}
+}
+
+func runPool(args []string) {
+	fs := flag.NewFlagSet("pool", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	vcpus := fs.Int("vcpus", 8, "vCPU cores for PgBouncer sweet spot calculation")
+	demo := fs.Bool("demo", false, "Use demo data")
+	_ = fs.Parse(args)
+
+	var health model.ConnectionPoolHealth
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+		health, _ = client.GetConnectionPoolHealth(ctx, *vcpus)
+	} else {
+		health = model.GetDemoConnectionPoolHealth()
+	}
+
+	fmt.Printf("\n=== Connection Pool & Saturation Health ===\n")
+	fmt.Printf("Status: %s\n", health.Status)
+	fmt.Printf("Total Connections: %d / %d (%.1f%% saturation)\n", health.TotalConnections, health.MaxConnections, health.UtilizationPercent)
+	fmt.Printf("Active: %d | Idle: %d | Idle in Transaction: %d\n", health.ActiveCount, health.IdleCount, health.IdleInTxCount)
+	if health.MaxIdleInTxDuration > 0 {
+		fmt.Printf("Max Idle in Transaction Duration: %.1f seconds\n", health.MaxIdleInTxDuration)
+	}
+	fmt.Printf("\nPgBouncer Sizing Sweet Spot: %d connections\n", health.OptimalPoolSize)
+	fmt.Printf("Advice: %s\n", health.PgBouncerAdvice)
+
+	if len(health.Warnings) > 0 {
+		fmt.Println("\nWarnings:")
+		for _, w := range health.Warnings {
+			fmt.Printf("  ! %s\n", w)
+		}
+	}
+	fmt.Println()
 }
