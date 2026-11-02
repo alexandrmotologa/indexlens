@@ -19,7 +19,7 @@ import (
 	"github.com/alexandrmotologa/indexlens/internal/watchdog"
 )
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -39,6 +39,14 @@ func main() {
 		runBloat(args)
 	case "advice":
 		runAdvice(args)
+	case "unused":
+		runUnused(args)
+	case "locks":
+		runLocks(args)
+	case "check":
+		runCheck(args)
+	case "report":
+		runReport(args)
 	case "version", "-v", "--version":
 		fmt.Printf("IndexLens v%s (PostgreSQL Diagnostics & Index Synthesizer)\n", version)
 	case "help", "-h", "--help":
@@ -56,11 +64,15 @@ func printHelp() {
 Usage:
   indexlens <command> [flags] [arguments]
 
-Commands:
+Core Commands:
   serve     Start the interactive web studio and REST API
   explain   Parse and diagnose an EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) plan
   bloat     Estimate table dead tuples and disk bloat
   advice    Synthesize non-blocking CREATE INDEX CONCURRENTLY recommendations
+  unused    Detect zero-scan and redundant indexes with safe DROP DDL
+  locks     Inspect real-time lock contention and blocking processes
+  check     Automated CI/CD health verification with exit codes
+  report    Generate a comprehensive Markdown audit report
   version   Display version information
   help      Show help overview
 
@@ -165,7 +177,6 @@ func runExplain(args []string) {
 		}
 		planJSON = []byte(planStr)
 	} else {
-		// Output demo plan diagnostic
 		fmt.Println("[IndexLens] Analyzing demo plan (orders table query):")
 		res := model.GetDemoExplainResult()
 		printExplainResult(&res)
@@ -272,10 +283,261 @@ func runAdvice(args []string) {
 
 	fmt.Printf("\n=== Missing Index Recommendations (%d) ===\n\n", len(recs))
 	for i, r := range recs {
-		fmt.Printf("[%d] Priority: %s | Table: %s\n", i+1, r.Priority, r.TableName)
+		fmt.Printf("[%d] Priority: %s | Table: %s | Est. Size: %s (%s write penalty)\n",
+			i+1, r.Priority, r.TableName, r.EstimatedSizePretty, r.WritePenalty)
 		fmt.Printf("    Reason : %s\n", r.Reason)
 		fmt.Printf("    DDL    : %s\n\n", r.DDL)
 	}
+}
+
+func runUnused(args []string) {
+	fs := flag.NewFlagSet("unused", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	demo := fs.Bool("demo", false, "Use demo data")
+	_ = fs.Parse(args)
+
+	var unused []model.UnusedIndex
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		unused, err = client.GetUnusedIndexes(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unused indexes query error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		unused = model.GetDemoUnusedIndexes()
+	}
+
+	fmt.Printf("\n=== Unused & Redundant Index Cleanup Candidates (%d) ===\n\n", len(unused))
+	for i, u := range unused {
+		status := "0 Scans"
+		if u.IsRedundant {
+			status = "Redundant"
+		}
+		fmt.Printf("[%d] %s on %s (%s, %s)\n", i+1, u.IndexName, u.TableName, u.IndexSizePretty, status)
+		fmt.Printf("    Reason : %s\n", u.Reason)
+		fmt.Printf("    Cleanup: %s\n\n", u.DropDDL)
+	}
+}
+
+func runLocks(args []string) {
+	fs := flag.NewFlagSet("locks", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	demo := fs.Bool("demo", false, "Use demo data")
+	_ = fs.Parse(args)
+
+	var tree model.LockContentionTree
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		tree, err = client.GetLockContention(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Lock query error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		tree = model.GetDemoLockContention()
+	}
+
+	fmt.Printf("\n=== Live Activity & Lock Contention ===\n")
+	fmt.Printf("Active Connections: %d | Blocked Queries: %d | Contention Detected: %v\n\n",
+		len(tree.ActiveProcesses), tree.TotalBlockedQueries, tree.HasContention)
+
+	if len(tree.RootBlockers) > 0 {
+		fmt.Println("--- Root Blocking Queries ---")
+		for _, b := range tree.RootBlockers {
+			fmt.Printf("PID %d (User: %s, State: %s, Duration: %.1f ms)\n", b.PID, b.User, b.State, b.DurationMs)
+			fmt.Printf("  Query: %s\n", b.Query)
+			fmt.Printf("  Blocking PIDs: %v\n\n", b.BlockedPIDs)
+		}
+	} else {
+		fmt.Println("No queries are currently blocked on table or row locks.")
+	}
+}
+
+func runCheck(args []string) {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	demo := fs.Bool("demo", false, "Use demo data")
+	failBloat := fs.Float64("fail-on-bloat", 35.0, "Fail if any table dead tuple ratio exceeds this percentage")
+	failCache := fs.Float64("fail-on-cache", 90.0, "Fail if overall buffer cache hit ratio drops below this percentage")
+	failWrap := fs.Float64("fail-on-wraparound", 75.0, "Fail if TxID wraparound consumption exceeds this percentage")
+	_ = fs.Parse(args)
+
+	var cacheStats model.CacheHitStats
+	var bloatList []model.BloatInfo
+	var wrap model.WraparoundInfo
+
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		cacheStats, _ = client.GetCacheStats(ctx)
+		bloatList, _ = watchdog.EstimateTableBloat(ctx, client)
+		wrap, _ = watchdog.CheckWraparound(ctx, client)
+	} else {
+		cacheStats = model.GetDemoCacheStats()
+		bloatList = model.GetDemoBloat()
+		_, wrap = model.GetDemoAutovacuum()
+	}
+
+	failed := false
+	fmt.Println("=== IndexLens Health Quality Gate ===")
+
+	// 1. Check cache hit ratio
+	fmt.Printf("[Check] Buffer Cache Hit Ratio: %.1f%% (Threshold: >= %.1f%%)... ",
+		cacheStats.OverallHitRatio, *failCache)
+	if cacheStats.OverallHitRatio < *failCache {
+		fmt.Println("FAILED")
+		failed = true
+	} else {
+		fmt.Println("PASSED")
+	}
+
+	// 2. Check table bloat
+	maxDeadRatio := 0.0
+	worstTable := ""
+	for _, b := range bloatList {
+		if b.DeadTupleRatio > maxDeadRatio {
+			maxDeadRatio = b.DeadTupleRatio
+			worstTable = b.TableName
+		}
+	}
+	fmt.Printf("[Check] Max Table Dead Tuples: %.1f%% on '%s' (Threshold: <= %.1f%%)... ",
+		maxDeadRatio, worstTable, *failBloat)
+	if maxDeadRatio > *failBloat {
+		fmt.Println("FAILED")
+		failed = true
+	} else {
+		fmt.Println("PASSED")
+	}
+
+	// 3. Check wraparound
+	fmt.Printf("[Check] TxID Wraparound Consumed: %.1f%% (Threshold: <= %.1f%%)... ",
+		wrap.PercentConsumed, *failWrap)
+	if wrap.PercentConsumed > *failWrap {
+		fmt.Println("FAILED")
+		failed = true
+	} else {
+		fmt.Println("PASSED")
+	}
+
+	if failed {
+		fmt.Println("\nQuality Gate FAILED: Performance or safety thresholds violated.")
+		os.Exit(1)
+	}
+
+	fmt.Println("\nQuality Gate PASSED: Database metrics meet all reliability standards.")
+}
+
+func runReport(args []string) {
+	fs := flag.NewFlagSet("report", flag.ExitOnError)
+	dsn := fs.String("dsn", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+	output := fs.String("output", "indexlens_report.md", "Output file path for Markdown report")
+	demo := fs.Bool("demo", false, "Use demo data")
+	_ = fs.Parse(args)
+
+	var queries []model.QueryStat
+	var recs []model.IndexRecommendation
+	var unused []model.UnusedIndex
+	var bloat []model.BloatInfo
+
+	if !*demo && *dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		client, err := poller.NewClient(ctx, *dsn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database connection error: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		queries, _ = client.GetSlowQueries(ctx, 10, "total")
+		tables, _ := client.GetTableStats(ctx)
+		recs = synthesizer.AdviseIndexes(tables, queries)
+		unused, _ = client.GetUnusedIndexes(ctx)
+		bloat, _ = watchdog.EstimateTableBloat(ctx, client)
+	} else {
+		queries = model.GetDemoQueries()
+		recs = model.GetDemoRecommendations()
+		unused = model.GetDemoUnusedIndexes()
+		bloat = model.GetDemoBloat()
+	}
+
+	var md strings.Builder
+	md.WriteString("# IndexLens PostgreSQL Performance & Diagnostic Report\n\n")
+	md.WriteString(fmt.Sprintf("*Generated on: %s*\n\n", time.Now().UTC().Format(time.RFC1123)))
+
+	md.WriteString("## 1. Top Identified Missing Indexes\n\n")
+	for i, r := range recs {
+		md.WriteString(fmt.Sprintf("### [%d] Table: `%s` (Priority: %s)\n", i+1, r.TableName, r.Priority))
+		md.WriteString(fmt.Sprintf("- **Reason**: %s\n", r.Reason))
+		md.WriteString(fmt.Sprintf("- **Estimated Size**: %s | **Write Penalty**: %s\n", r.EstimatedSizePretty, r.WritePenalty))
+		md.WriteString(fmt.Sprintf("```sql\n%s\n```\n\n", r.DDL))
+	}
+
+	if len(unused) > 0 {
+		md.WriteString("## 2. Unused & Redundant Indexes (Cleanup Candidates)\n\n")
+		for i, u := range unused {
+			md.WriteString(fmt.Sprintf("### [%d] Index: `%s` on `%s` (%s)\n", i+1, u.IndexName, u.TableName, u.IndexSizePretty))
+			md.WriteString(fmt.Sprintf("- **Reason**: %s\n", u.Reason))
+			md.WriteString(fmt.Sprintf("```sql\n%s\n```\n\n", u.DropDDL))
+		}
+	}
+
+	md.WriteString("## 3. High Latency Queries\n\n")
+	md.WriteString("| Calls | Mean Latency | Total Duration | Cache Hit % | Query Snippet |\n")
+	md.WriteString("|---|---|---|---|---|\n")
+	for _, q := range queries {
+		snippet := q.Query
+		if len(snippet) > 60 {
+			snippet = snippet[:57] + "..."
+		}
+		md.WriteString(fmt.Sprintf("| %d | %.1f ms | %.1f s | %.1f%% | `%s` |\n",
+			q.Calls, q.MeanExecTime, q.TotalExecTime/1000.0, q.CacheHitRatio, strings.ReplaceAll(snippet, "|", "/")))
+	}
+	md.WriteString("\n")
+
+	md.WriteString("## 4. Table Bloat & Dead Tuples\n\n")
+	md.WriteString("| Relation | Total Size | Dead Tuples | Dead % | Estimated Bloat |\n")
+	md.WriteString("|---|---|---|---|---|\n")
+	for _, b := range bloat {
+		md.WriteString(fmt.Sprintf("| `%s` | %s | %d | %.1f%% | %s |\n",
+			b.TableName, b.SizePretty, b.DeadTuples, b.DeadTupleRatio, b.BloatPretty))
+	}
+
+	err := os.WriteFile(*output, []byte(md.String()), 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write report file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[IndexLens] Report generated successfully: %s\n", *output)
 }
 
 func maskDSN(dsn string) string {

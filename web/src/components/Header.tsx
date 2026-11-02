@@ -1,12 +1,13 @@
 import React from 'react';
-import { Database, Flame, Zap, ShieldAlert, Layers, RefreshCw } from 'lucide-react';
+import { Database, Flame, Zap, ShieldAlert, Layers, RefreshCw, Lock, Download } from 'lucide-react';
 import type { SystemOverview } from '../types/api';
 
 interface HeaderProps {
   overview: SystemOverview | null;
-  activeTab: 'queries' | 'explain' | 'advisor' | 'bloat' | 'cache';
-  setActiveTab: (tab: 'queries' | 'explain' | 'advisor' | 'bloat' | 'cache') => void;
+  activeTab: 'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache';
+  setActiveTab: (tab: 'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache') => void;
   onRefresh: () => void;
+  onExportReport: () => void;
   isRefreshing: boolean;
 }
 
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   onRefresh,
+  onExportReport,
   isRefreshing,
 }) => {
   return (
@@ -83,9 +85,26 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Layers className="w-4 h-4" />
               <span>Index Advisor</span>
-              {overview && overview.underIndexedTablesCount > 0 && (
+              {overview && (overview.underIndexedTablesCount > 0 || overview.unusedIndexesCount > 0) && (
                 <span className="ml-1 px-1.5 py-0.2 text-xs rounded-full bg-amber-500 text-black font-bold">
-                  {overview.underIndexedTablesCount}
+                  {overview.underIndexedTablesCount + overview.unusedIndexesCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('locks')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'locks'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-surface-elevated hover:text-white'
+              }`}
+            >
+              <Lock className="w-4 h-4" />
+              <span>Locks &amp; Activity</span>
+              {overview && overview.activeLocksCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 text-xs rounded-full bg-red-500 text-white font-bold animate-pulse">
+                  !
                 </span>
               )}
             </button>
@@ -99,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              <span>Bloat & Autovacuum</span>
+              <span>Bloat &amp; Autovacuum</span>
             </button>
 
             <button
@@ -115,31 +134,16 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Quick Metrics & Refresh */}
-          <div className="flex items-center space-x-4">
-            {overview && (
-              <div className="hidden lg:flex items-center space-x-4 text-xs font-mono">
-                <div className="bg-surface-elevated px-2.5 py-1.5 rounded border border-surface-border">
-                  <span className="text-gray-400">Cache Hit: </span>
-                  <span
-                    className={
-                      overview.bufferCacheHitRatio >= 99
-                        ? 'text-emerald-400 font-bold'
-                        : 'text-amber-400 font-bold'
-                    }
-                  >
-                    {overview.bufferCacheHitRatio.toFixed(1)}%
-                  </span>
-                </div>
-
-                <div className="bg-surface-elevated px-2.5 py-1.5 rounded border border-surface-border">
-                  <span className="text-gray-400">TxID Safe: </span>
-                  <span className="text-blue-400 font-bold">
-                    {overview.wraparoundSafetyPercent.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            )}
+          {/* Export Report & Refresh */}
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={onExportReport}
+              className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-border text-xs font-medium text-gray-200 border border-surface-border transition-colors shadow-sm"
+              title="Download Incident / Audit Markdown Report"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-400" />
+              <span>Export Report</span>
+            </button>
 
             <button
               onClick={onRefresh}

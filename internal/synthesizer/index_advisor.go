@@ -75,6 +75,8 @@ func AdviseIndexes(tables []model.TableStat, queries []model.QueryStat) []model.
 		reason := fmt.Sprintf("%d sequential scans reading %s rows on '%s'. Query filters on %s with mean latency %.1f ms.",
 			tblStat.SeqScan, model.FormatBytes(tblStat.SeqTupRead), targetTable, strings.Join(rankedCols, ", "), q.MeanExecTime)
 
+		estBytes, estPretty, writePenalty := EstimateIndexSize(rankedCols, tblStat.LiveTuples)
+
 		recommendations = append(recommendations, model.IndexRecommendation{
 			ID:                     recID,
 			TableName:              targetTable,
@@ -84,6 +86,9 @@ func AdviseIndexes(tables []model.TableStat, queries []model.QueryStat) []model.
 			Reason:                 reason,
 			DDL:                    ddl,
 			EstimatedScanReduction: estReduction,
+			EstimatedSizeBytes:     estBytes,
+			EstimatedSizePretty:    estPretty,
+			WritePenalty:           writePenalty,
 			SeqScanCount:           tblStat.SeqScan,
 			SeqTuplesRead:          tblStat.SeqTupRead,
 			Priority:               priority,

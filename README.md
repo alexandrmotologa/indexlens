@@ -7,9 +7,13 @@ IndexLens is a non-invasive PostgreSQL slow query explainer, autovacuum watchdog
 - **Non-Invasive Telemetry Polling**: Connects using standard read-only credentials. Inspects `pg_stat_statements`, `pg_stat_user_tables`, `pg_statio_user_tables`, and `pg_statio_user_indexes`.
 - **Visual EXPLAIN Flamegraph**: Parses `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` execution plans into interactive hierarchical flamegraphs. Highlights buffer cache hits, read latency, and node execution time.
 - **Bottleneck Detection**: Automatically detects heavy sequential table scans, disk spills (`Sort Method: external merge Disk`), hash join batch overflow, and stale planner statistics.
-- **Missing Index Synthesizer**: Correlates sequential scans with active query filter patterns. Enforces B-Tree ordering rules (equality columns first, range columns next, sort keys last) and synthesizes non-blocking `CREATE INDEX CONCURRENTLY` DDL statements.
+- **Missing Index Synthesizer**: Correlates sequential scans with active query filter patterns. Enforces B-Tree ordering rules (equality columns first, range columns next, sort keys last) and synthesizes non-blocking `CREATE INDEX CONCURRENTLY` DDL statements. Includes index disk footprint and write-penalty calculations.
+- **Unused & Redundant Index Cleanup**: Identifies indexes with zero or negligible scans and redundant prefix indexes, generating non-blocking `DROP INDEX CONCURRENTLY IF EXISTS` statements.
+- **Plan Diff & Regression Analyzer**: Compares baseline vs current execution plans side-by-side, isolating duration shifts, buffer read spikes, and node type changes.
+- **Live Lock Contention Tracker**: Inspects `pg_stat_activity` and `pg_locks` to map root blocker transactions, blocked waiting queries, and idle-in-transaction connections.
 - **Table Bloat & Autovacuum Watchdog**: Calculates dead tuple ratios, estimates wasted disk space from MVCC update churn, tracks running `pg_stat_progress_vacuum` phases, and alerts before Transaction ID (TxID) Wraparound limits are reached.
-- **Local-First Web Studio**: Interactive React 19 interface served directly from the Go binary without external cloud dependencies or telemetry tracking. Includes an offline demo mode for testing without a live database.
+- **HypoPG In-Memory Verification**: Simulates hypothetical indexes using the `hypopg` extension to prove planner cost reduction before running physical index builds.
+- **Local-First Web Studio & CI/CD Gate**: Interactive React 19 interface served directly from the Go binary without external cloud dependencies. Includes an automated `check` command for CI/CD pipelines and 1-click Markdown report exports.
 
 ## Architecture
 
@@ -84,17 +88,33 @@ Ensure `pg_stat_statements` is enabled in your database. See [docs/POSTGRESQL_SE
 
 ### 4. CLI Subcommands
 
-Analyze an EXPLAIN plan directly in your terminal:
+IndexLens provides a suite of terminal commands for diagnostics and automation:
 
 ```bash
-# Analyze a JSON plan file
+# Start the web studio and REST API
+./indexlens serve --dsn "postgres://..." --port 9920
+
+# Analyze a JSON plan file or run a live query EXPLAIN
 ./indexlens explain --file plan.json
+./indexlens explain --dsn "postgres://..." "SELECT * FROM orders WHERE tenant_id = 42"
 
-# Check table bloat directly from the CLI
-./indexlens bloat --dsn "postgres://monitor_user:secret@localhost:5432/production_db"
+# Review missing index advice
+./indexlens advice --dsn "postgres://..."
 
-# Review missing index advice from the terminal
-./indexlens advice --dsn "postgres://monitor_user:secret@localhost:5432/production_db"
+# Detect unused and redundant indexes
+./indexlens unused --dsn "postgres://..."
+
+# Inspect real-time lock contention and blocking query trees
+./indexlens locks --dsn "postgres://..."
+
+# Estimate table dead tuples and disk bloat
+./indexlens bloat --dsn "postgres://..."
+
+# Run CI/CD quality gate check with failure thresholds
+./indexlens check --dsn "postgres://..." --fail-on-bloat 35 --fail-on-cache 90 --fail-on-wraparound 75
+
+# Export a complete Markdown audit report
+./indexlens report --dsn "postgres://..." --output audit_report.md
 ```
 
 ## REST API Reference
@@ -104,12 +124,19 @@ When running `indexlens serve`, the internal API exposes the following endpoints
 | Endpoint | Method | Description |
 |---|---|---|
 | `/api/health` | GET | Health status and connection state |
-| `/api/overview` | GET | Global metrics: buffer cache hit ratio, active connections, bloat stats |
+| `/api/overview` | GET | Global metrics: cache hit ratio, active locks, bloat stats |
 | `/api/queries` | GET | Top slow queries from `pg_stat_statements` with sorting and filtering |
 | `/api/tables` | GET | Table statistics, sequential vs index scan counts, and dead tuple ratios |
-| `/api/explain` | POST | Ingests raw JSON execution plans and returns flamegraph nodes and bottlenecks |
+| `/api/cache` | GET | Global heap/index buffer cache hit ratios and sub-optimal relations |
+| `/api/explain` | POST | Ingests JSON execution plans and returns flamegraphs and bottlenecks |
+| `/api/explain/diff` | POST | Compares baseline vs current execution plans and computes latency deltas |
 | `/api/indexes/advisor` | GET | Synthesized missing index suggestions with non-blocking DDL |
+| `/api/indexes/unused` | GET | Zero-scan and redundant indexes with safe DROP statements |
+| `/api/indexes/simulate` | POST | Tests index planner selection in memory via HypoPG |
+| `/api/activity/locks` | GET | Active connections, wait events, and blocking dependency trees |
 | `/api/autovacuum` | GET | Running autovacuum workers and TxID wraparound safety horizon |
+| `/api/bloat` | GET | Table and index bloat estimates |
+| `/api/report/markdown` | GET | Generates downloadable Markdown incident / audit report |
 
 ## Documentation
 

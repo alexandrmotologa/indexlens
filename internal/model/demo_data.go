@@ -366,7 +366,7 @@ func GetDemoExplainResult() ExplainAnalysisResult {
 	}
 }
 
-// GetDemoRecommendations returns synthesized missing index suggestions.
+// GetDemoRecommendations returns synthesized missing index suggestions with estimated size.
 func GetDemoRecommendations() []IndexRecommendation {
 	return []IndexRecommendation{
 		{
@@ -378,6 +378,9 @@ func GetDemoRecommendations() []IndexRecommendation {
 			Reason:                 "45,210 sequential scans reading 38.5M tuples. Query filters by equality on tenant_id and range on created_at.",
 			DDL:                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_tenant_created ON public.orders (tenant_id, created_at DESC);",
 			EstimatedScanReduction: 88.5,
+			EstimatedSizeBytes:     48 * 1024 * 1024,
+			EstimatedSizePretty:    "48.0 MB",
+			WritePenalty:           "LOW",
 			SeqScanCount:           45210,
 			SeqTuplesRead:          38500000,
 			Priority:               "HIGH",
@@ -391,6 +394,9 @@ func GetDemoRecommendations() []IndexRecommendation {
 			Reason:                 "78,400 sequential scans reading 94M tuples. High frequency query filters on user_id and action.",
 			DDL:                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_user_action_created ON public.audit_logs (user_id, action, created_at DESC);",
 			EstimatedScanReduction: 94.2,
+			EstimatedSizeBytes:     142 * 1024 * 1024,
+			EstimatedSizePretty:    "142.0 MB",
+			WritePenalty:           "MODERATE",
 			SeqScanCount:           78400,
 			SeqTuplesRead:          94000000,
 			Priority:               "HIGH",
@@ -404,10 +410,164 @@ func GetDemoRecommendations() []IndexRecommendation {
 			Reason:                 "Partial index opportunity: 62,100 sequential scans fetching pending event queue rows.",
 			DDL:                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_unprocessed_type ON public.events (((payload->>'event_type')), id ASC) WHERE processed = false;",
 			EstimatedScanReduction: 96.0,
+			EstimatedSizeBytes:     12 * 1024 * 1024,
+			EstimatedSizePretty:    "12.0 MB",
+			WritePenalty:           "LOW",
 			SeqScanCount:           62100,
 			SeqTuplesRead:          24500000,
 			Priority:               "MEDIUM",
 		},
+	}
+}
+
+// GetDemoUnusedIndexes returns zero-scan and redundant indexes with drop DDL.
+func GetDemoUnusedIndexes() []UnusedIndex {
+	return []UnusedIndex{
+		{
+			SchemaName:      "public",
+			TableName:       "orders",
+			IndexName:       "idx_orders_legacy_status",
+			IndexSizeBytes:  420 * 1024 * 1024,
+			IndexSizePretty: "420.0 MB",
+			IndexScans:      0,
+			TuplesRead:      0,
+			TuplesFetched:   0,
+			IsRedundant:     false,
+			Columns:         []string{"legacy_status"},
+			DropDDL:         "DROP INDEX CONCURRENTLY IF EXISTS public.idx_orders_legacy_status;",
+			Reason:          "0 scans recorded across 18,450 queries. Index consumes 420 MB of disk and shared_buffers memory.",
+			Priority:        "HIGH",
+		},
+		{
+			SchemaName:      "public",
+			TableName:       "audit_logs",
+			IndexName:       "idx_audit_logs_user_id_only",
+			IndexSizeBytes:  310 * 1024 * 1024,
+			IndexSizePretty: "310.0 MB",
+			IndexScans:      14,
+			TuplesRead:      42,
+			TuplesFetched:   14,
+			IsRedundant:     true,
+			RedundantWith:   "idx_audit_logs_user_action_created (user_id, action, created_at)",
+			Columns:         []string{"user_id"},
+			DropDDL:         "DROP INDEX CONCURRENTLY IF EXISTS public.idx_audit_logs_user_id_only;",
+			Reason:          "Redundant index. The composite index on (user_id, action, created_at) already covers leading prefix queries.",
+			Priority:        "HIGH",
+		},
+		{
+			SchemaName:      "public",
+			TableName:       "events",
+			IndexName:       "idx_events_created_at",
+			IndexSizeBytes:  95 * 1024 * 1024,
+			IndexSizePretty: "95.0 MB",
+			IndexScans:      2,
+			TuplesRead:      12,
+			TuplesFetched:   2,
+			IsRedundant:     false,
+			Columns:         []string{"created_at"},
+			DropDDL:         "DROP INDEX CONCURRENTLY IF EXISTS public.idx_events_created_at;",
+			Reason:          "Negligible scan count (2 scans). Table updates are bearing index maintenance write overhead for unused index.",
+			Priority:        "MEDIUM",
+		},
+	}
+}
+
+// GetDemoLockContention returns a realistic lock graph and blocking process tree.
+func GetDemoLockContention() LockContentionTree {
+	rootBlocker := LiveActivityItem{
+		PID:           18402,
+		User:          "app_worker",
+		Database:      "production_db",
+		State:         "idle in transaction",
+		DurationMs:    14250.0,
+		WaitEventType: "Client",
+		WaitEvent:     "ClientRead",
+		Query:         "UPDATE orders SET status = 'processing' WHERE id = 984021;",
+		BlockedPIDs:   []int64{18455, 18460},
+	}
+
+	blocked1 := LiveActivityItem{
+		PID:           18455,
+		User:          "web_api",
+		Database:      "production_db",
+		State:         "active",
+		DurationMs:    12840.0,
+		WaitEventType: "Lock",
+		WaitEvent:     "transactionid",
+		Query:         "SELECT * FROM orders WHERE id = 984021 FOR UPDATE;",
+		BlockingPID:   18402,
+	}
+
+	blocked2 := LiveActivityItem{
+		PID:           18460,
+		User:          "billing_svc",
+		Database:      "production_db",
+		State:         "active",
+		DurationMs:    8910.0,
+		WaitEventType: "Lock",
+		WaitEvent:     "tuple",
+		Query:         "UPDATE orders SET total_amount = 499.00 WHERE id = 984021;",
+		BlockingPID:   18402,
+	}
+
+	return LockContentionTree{
+		RootBlockers:        []LiveActivityItem{rootBlocker},
+		ActiveProcesses:     []LiveActivityItem{rootBlocker, blocked1, blocked2},
+		TotalBlockedQueries: 2,
+		ActiveLocksCount:    14,
+		HasContention:       true,
+	}
+}
+
+// GetDemoPlanDiff returns a representative comparison between unindexed vs indexed query runs.
+func GetDemoPlanDiff() PlanDiffResult {
+	return PlanDiffResult{
+		BaselineExecutionTime: 182.6,
+		CurrentExecutionTime:  4.2,
+		TimeDeltaMs:           -178.4,
+		TimeDeltaPct:          -97.7,
+		BaselineBuffersHit:    12400,
+		CurrentBuffersHit:     820,
+		BaselineBuffersRead:   8940,
+		CurrentBuffersRead:    0,
+		Verdict:               "IMPROVED",
+		Summary:               "Execution time dropped by 97.7% (182.6ms -> 4.2ms). Sequential scan converted to B-Tree Index Scan, eliminating 8,940 disk block reads and external sort spill.",
+		NodeChanges: []PlanNodeDiff{
+			{
+				Path:          "root.sort.scan",
+				BaselineType:  "Seq Scan on orders (148.2 ms)",
+				CurrentType:   "Index Scan using idx_orders_tenant_created (3.1 ms)",
+				BaselineTime:  148.2,
+				CurrentTime:   3.1,
+				TimeDeltaMs:   -145.1,
+				ChangeSummary: "Table scan replaced by index search; discarded row overhead eliminated.",
+			},
+			{
+				Path:          "root.sort",
+				BaselineType:  "Sort (external merge Disk 14 MB)",
+				CurrentType:   "Eliminated (Index-Organized Sorting)",
+				BaselineTime:  34.2,
+				CurrentTime:   0.0,
+				TimeDeltaMs:   -34.2,
+				ChangeSummary: "Disk sort spill completely bypassed by ordered B-Tree traversal.",
+			},
+		},
+	}
+}
+
+// GetDemoHypoSimulation returns simulated cost impact.
+func GetDemoHypoSimulation() HypoSimulationResult {
+	return HypoSimulationResult{
+		Supported:          true,
+		ExtensionInstalled: true,
+		OriginalCost:       1240.62,
+		SimulatedCost:      14.25,
+		CostReductionPct:   98.85,
+		OriginalPlanType:   "Seq Scan + Sort (Spill)",
+		SimulatedPlanType:  "Index Scan using <hypo_idx_orders_tenant_created>",
+		IndexName:          "idx_orders_tenant_created",
+		Columns:            "tenant_id, created_at DESC",
+		Message:            "Planner verified! PostgreSQL query planner selects the hypothetical index, cutting plan cost from 1240.6 to 14.3.",
 	}
 }
 
@@ -512,6 +672,8 @@ func GetDemoOverview() SystemOverview {
 		BufferCacheHitRatio:     97.2,
 		TotalQueriesTracked:     5,
 		UnderIndexedTablesCount: 3,
+		UnusedIndexesCount:      3,
+		ActiveLocksCount:        14,
 		BloatWarningCount:       2,
 		WraparoundSafetyPercent: 72.9,
 		ActiveAutovacuums:       2,

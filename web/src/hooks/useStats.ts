@@ -5,6 +5,10 @@ import type {
   CacheHitStats,
   ExplainAnalysisResult,
   IndexRecommendation,
+  UnusedIndex,
+  LockContentionTree,
+  PlanDiffResult,
+  HypoSimulationResult,
   BloatInfo,
   AutovacuumWorker,
   WraparoundInfo,
@@ -15,10 +19,13 @@ export function useStats() {
   const [queries, setQueries] = useState<QueryStat[]>([]);
   const [cacheStats, setCacheStats] = useState<CacheHitStats | null>(null);
   const [recommendations, setRecommendations] = useState<IndexRecommendation[]>([]);
+  const [unusedIndexes, setUnusedIndexes] = useState<UnusedIndex[]>([]);
+  const [lockTree, setLockTree] = useState<LockContentionTree | null>(null);
   const [bloatList, setBloatList] = useState<BloatInfo[]>([]);
   const [vacuumWorkers, setVacuumWorkers] = useState<AutovacuumWorker[]>([]);
   const [wraparound, setWraparound] = useState<WraparoundInfo | null>(null);
   const [explainResult, setExplainResult] = useState<ExplainAnalysisResult | null>(null);
+  const [planDiff, setPlanDiff] = useState<PlanDiffResult | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,8 +58,21 @@ export function useStats() {
 
   const fetchRecommendations = useCallback(async () => {
     try {
-      const res = await fetch('/api/indexes/advisor');
-      if (res.ok) setRecommendations(await res.json());
+      const [resRecs, resUnused] = await Promise.all([
+        fetch('/api/indexes/advisor'),
+        fetch('/api/indexes/unused'),
+      ]);
+      if (resRecs.ok) setRecommendations(await resRecs.json());
+      if (resUnused.ok) setUnusedIndexes(await resUnused.json());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
+  const fetchLockContention = useCallback(async () => {
+    try {
+      const res = await fetch('/api/activity/locks');
+      if (res.ok) setLockTree(await res.json());
     } catch (e: any) {
       setError(e.message);
     }
@@ -82,10 +102,11 @@ export function useStats() {
       fetchQueries(),
       fetchCache(),
       fetchRecommendations(),
+      fetchLockContention(),
       fetchBloatAndAutovacuum(),
     ]);
     setIsRefreshing(false);
-  }, [fetchOverview, fetchQueries, fetchCache, fetchRecommendations, fetchBloatAndAutovacuum]);
+  }, [fetchOverview, fetchQueries, fetchCache, fetchRecommendations, fetchLockContention, fetchBloatAndAutovacuum]);
 
   useEffect(() => {
     refreshAll();
@@ -101,7 +122,18 @@ export function useStats() {
       })
       .catch(() => {});
 
-    // Periodic telemetry polling every 10 seconds
+    // Default initial plan diff
+    fetch('/api/explain/diff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setPlanDiff(data);
+      })
+      .catch(() => {});
+
     const interval = setInterval(refreshAll, 10000);
     return () => clearInterval(interval);
   }, [refreshAll]);
@@ -136,19 +168,57 @@ export function useStats() {
     return data;
   };
 
+  const comparePlans = async (baseline: string, current: string): Promise<PlanDiffResult | null> => {
+    const res = await fetch('/api/explain/diff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseline, current }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to compare plans');
+    }
+    const data = await res.json();
+    setPlanDiff(data);
+    return data;
+  };
+
+  const simulateHypo = async (ddl: string, query: string): Promise<HypoSimulationResult> => {
+    const res = await fetch('/api/indexes/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ddl, query }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to run index simulation');
+    }
+    return await res.json();
+  };
+
+  const downloadReport = () => {
+    window.open('/api/report/markdown', '_blank');
+  };
+
   return {
     overview,
     queries,
     cacheStats,
     recommendations,
+    unusedIndexes,
+    lockTree,
     bloatList,
     vacuumWorkers,
     wraparound,
     explainResult,
+    planDiff,
     isRefreshing,
     error,
     refreshAll,
     analyzePlan,
     executeQuery,
+    comparePlans,
+    simulateHypo,
+    downloadReport,
   };
 }

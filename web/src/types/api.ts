@@ -122,9 +122,87 @@ export interface IndexRecommendation {
   reason: string;
   ddl: string;
   estimatedScanReduction: number;
+  estimatedSizeBytes: number;
+  estimatedSizePretty: string;
+  writePenalty: 'LOW' | 'MODERATE' | 'SIGNIFICANT';
   seqScanCount: number;
   seqTuplesRead: number;
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface UnusedIndex {
+  schemaName: string;
+  tableName: string;
+  indexName: string;
+  indexSizeBytes: number;
+  indexSizePretty: string;
+  indexScans: number;
+  tuplesRead: number;
+  tuplesFetched: number;
+  isRedundant: boolean;
+  redundantWith?: string;
+  columns: string[];
+  dropDdl: string;
+  reason: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface LiveActivityItem {
+  pid: number;
+  user: string;
+  database: string;
+  state: string;
+  durationMs: number;
+  waitEventType?: string;
+  waitEvent?: string;
+  query: string;
+  blockingPid?: number;
+  blockedPids?: number[];
+}
+
+export interface LockContentionTree {
+  rootBlockers: LiveActivityItem[];
+  activeProcesses: LiveActivityItem[];
+  totalBlockedQueries: number;
+  activeLocksCount: number;
+  hasContention: boolean;
+}
+
+export interface PlanNodeDiff {
+  path: string;
+  baselineType: string;
+  currentType: string;
+  baselineTime: number;
+  currentTime: number;
+  timeDeltaMs: number;
+  changeSummary: string;
+}
+
+export interface PlanDiffResult {
+  baselineExecutionTime: number;
+  currentExecutionTime: number;
+  timeDeltaMs: number;
+  timeDeltaPct: number;
+  baselineBuffersHit: number;
+  currentBuffersHit: number;
+  baselineBuffersRead: number;
+  currentBuffersRead: number;
+  nodeChanges: PlanNodeDiff[];
+  verdict: 'IMPROVED' | 'REGRESSED' | 'NEUTRAL';
+  summary: string;
+}
+
+export interface HypoSimulationResult {
+  supported: boolean;
+  extensionInstalled: boolean;
+  originalCost: number;
+  simulatedCost: number;
+  costReductionPct: number;
+  originalPlanType: string;
+  simulatedPlanType: string;
+  indexName: string;
+  columns: string;
+  message: string;
 }
 
 export interface BloatInfo {
@@ -170,6 +248,8 @@ export interface SystemOverview {
   bufferCacheHitRatio: number;
   totalQueriesTracked: number;
   underIndexedTablesCount: number;
+  unusedIndexesCount: number;
+  activeLocksCount: number;
   bloatWarningCount: number;
   wraparoundSafetyPercent: number;
   activeAutovacuums: number;

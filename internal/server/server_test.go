@@ -49,11 +49,41 @@ func TestServerEndpointsInDemoMode(t *testing.T) {
 			wantSubstr: `HEAVY_SEQ_SCAN`,
 		},
 		{
+			name:       "Explain diff fallback",
+			method:     "POST",
+			url:        "/api/explain/diff",
+			body:       `{}`,
+			wantStatus: http.StatusOK,
+			wantSubstr: `IMPROVED`,
+		},
+		{
 			name:       "Indexes advisor",
 			method:     "GET",
 			url:        "/api/indexes/advisor",
 			wantStatus: http.StatusOK,
 			wantSubstr: `CREATE INDEX CONCURRENTLY`,
+		},
+		{
+			name:       "Unused indexes",
+			method:     "GET",
+			url:        "/api/indexes/unused",
+			wantStatus: http.StatusOK,
+			wantSubstr: `DROP INDEX CONCURRENTLY`,
+		},
+		{
+			name:       "Hypo simulation",
+			method:     "POST",
+			url:        "/api/indexes/simulate",
+			body:       `{}`,
+			wantStatus: http.StatusOK,
+			wantSubstr: `Planner verified`,
+		},
+		{
+			name:       "Activity and locks",
+			method:     "GET",
+			url:        "/api/activity/locks",
+			wantStatus: http.StatusOK,
+			wantSubstr: `rootBlockers`,
 		},
 		{
 			name:       "Autovacuum",
@@ -68,6 +98,13 @@ func TestServerEndpointsInDemoMode(t *testing.T) {
 			url:        "/api/bloat",
 			wantStatus: http.StatusOK,
 			wantSubstr: `audit_logs`,
+		},
+		{
+			name:       "Markdown report",
+			method:     "GET",
+			url:        "/api/report/markdown",
+			wantStatus: http.StatusOK,
+			wantSubstr: `# IndexLens PostgreSQL Performance`,
 		},
 	}
 

@@ -27,43 +27,43 @@ type QueryStat struct {
 
 // TableStat captures sequential vs index scans, tuple counts, and bloat signals.
 type TableStat struct {
-	SchemaName     string     `json:"schemaName"`
-	TableName      string     `json:"tableName"`
-	SeqScan        int64      `json:"seqScan"`
-	SeqTupRead     int64      `json:"seqTupRead"`
-	IdxScan        int64      `json:"idxScan"`
-	IdxTupFetch    int64      `json:"idxTupFetch"`
-	LiveTuples     int64      `json:"liveTuples"`
-	DeadTuples     int64      `json:"deadTuples"`
-	DeadTupleRatio float64    `json:"deadTupleRatio"` // percentage
-	TableSizeBytes int64      `json:"tableSizeBytes"`
-	IndexSizeBytes int64      `json:"indexSizeBytes"`
-	TableSizePretty string    `json:"tableSizePretty"`
-	IndexSizePretty string    `json:"indexSizePretty"`
-	LastVacuum     *time.Time `json:"lastVacuum"`
-	LastAutovacuum *time.Time `json:"lastAutovacuum"`
+	SchemaName      string     `json:"schemaName"`
+	TableName       string     `json:"tableName"`
+	SeqScan         int64      `json:"seqScan"`
+	SeqTupRead      int64      `json:"seqTupRead"`
+	IdxScan         int64      `json:"idxScan"`
+	IdxTupFetch     int64      `json:"idxTupFetch"`
+	LiveTuples      int64      `json:"liveTuples"`
+	DeadTuples      int64      `json:"deadTuples"`
+	DeadTupleRatio  float64    `json:"deadTupleRatio"` // percentage
+	TableSizeBytes  int64      `json:"tableSizeBytes"`
+	IndexSizeBytes  int64      `json:"indexSizeBytes"`
+	TableSizePretty string     `json:"tableSizePretty"`
+	IndexSizePretty string     `json:"indexSizePretty"`
+	LastVacuum      *time.Time `json:"lastVacuum"`
+	LastAutovacuum  *time.Time `json:"lastAutovacuum"`
 }
 
 // TableCacheStat represents cache efficiency for a single relation.
 type TableCacheStat struct {
-	TableName      string  `json:"tableName"`
-	HeapBlksHit    int64   `json:"heapBlksHit"`
-	HeapBlksRead   int64   `json:"heapBlksRead"`
-	HeapHitRatio   float64 `json:"heapHitRatio"`
-	IndexBlksHit   int64   `json:"indexBlksHit"`
-	IndexBlksRead  int64   `json:"indexBlksRead"`
-	IndexHitRatio  float64 `json:"indexHitRatio"`
+	TableName     string  `json:"tableName"`
+	HeapBlksHit   int64   `json:"heapBlksHit"`
+	HeapBlksRead  int64   `json:"heapBlksRead"`
+	HeapHitRatio  float64 `json:"heapHitRatio"`
+	IndexBlksHit  int64   `json:"indexBlksHit"`
+	IndexBlksRead int64   `json:"indexBlksRead"`
+	IndexHitRatio float64 `json:"indexHitRatio"`
 }
 
 // CacheHitStats captures global and per-table buffer hit ratios.
 type CacheHitStats struct {
-	GlobalHeapHitRatio  float64          `json:"globalHeapHitRatio"`
-	GlobalIndexHitRatio float64          `json:"globalIndexHitRatio"`
-	OverallHitRatio     float64          `json:"overallHitRatio"`
-	TotalHeapHit        int64            `json:"totalHeapHit"`
-	TotalHeapRead       int64            `json:"totalHeapRead"`
-	TotalIndexHit       int64            `json:"totalIndexHit"`
-	TotalIndexRead      int64            `json:"totalIndexRead"`
+	GlobalHeapHitRatio   float64          `json:"globalHeapHitRatio"`
+	GlobalIndexHitRatio  float64          `json:"globalIndexHitRatio"`
+	OverallHitRatio      float64          `json:"overallHitRatio"`
+	TotalHeapHit         int64            `json:"totalHeapHit"`
+	TotalHeapRead        int64            `json:"totalHeapRead"`
+	TotalIndexHit        int64            `json:"totalIndexHit"`
+	TotalIndexRead       int64            `json:"totalIndexRead"`
 	TablesBelowThreshold []TableCacheStat `json:"tablesBelowThreshold"`
 }
 
@@ -104,8 +104,8 @@ type ExplainPlanNode struct {
 
 // Bottleneck defines a flagged performance problem detected in an execution plan.
 type Bottleneck struct {
-	Type           string  `json:"type"`       // HEAVY_SEQ_SCAN, DISK_SPILL, TIME_SINK, STALE_STATS, CACHE_MISS, FILTER_REMOVAL
-	Severity       string  `json:"severity"`   // CRITICAL, WARNING, INFO
+	Type           string  `json:"type"` // HEAVY_SEQ_SCAN, DISK_SPILL, TIME_SINK, STALE_STATS, CACHE_MISS, FILTER_REMOVAL
+	Severity       string  `json:"severity"` // CRITICAL, WARNING, INFO
 	NodeID         string  `json:"nodeId"`
 	NodeType       string  `json:"nodeType"`
 	Relation       string  `json:"relation,omitempty"`
@@ -136,9 +136,93 @@ type IndexRecommendation struct {
 	Reason                 string   `json:"reason"`
 	DDL                    string   `json:"ddl"`
 	EstimatedScanReduction float64  `json:"estimatedScanReduction"` // percentage
+	EstimatedSizeBytes     int64    `json:"estimatedSizeBytes"`     // bytes
+	EstimatedSizePretty    string   `json:"estimatedSizePretty"`    // e.g. "48.2 MB"
+	WritePenalty           string   `json:"writePenalty"`           // LOW, MODERATE, SIGNIFICANT
 	SeqScanCount           int64    `json:"seqScanCount"`
 	SeqTuplesRead          int64    `json:"seqTuplesRead"`
 	Priority               string   `json:"priority"` // HIGH, MEDIUM, LOW
+}
+
+// UnusedIndex represents an index with zero or negligible scans or redundancy.
+type UnusedIndex struct {
+	SchemaName      string   `json:"schemaName"`
+	TableName       string   `json:"tableName"`
+	IndexName       string   `json:"indexName"`
+	IndexSizeBytes  int64    `json:"indexSizeBytes"`
+	IndexSizePretty string   `json:"indexSizePretty"`
+	IndexScans      int64    `json:"indexScans"`
+	TuplesRead      int64    `json:"tuplesRead"`
+	TuplesFetched   int64    `json:"tuplesFetched"`
+	IsRedundant     bool     `json:"isRedundant"`
+	RedundantWith   string   `json:"redundantWith,omitempty"`
+	Columns         []string `json:"columns"`
+	DropDDL         string   `json:"dropDdl"`
+	Reason          string   `json:"reason"`
+	Priority        string   `json:"priority"` // HIGH, MEDIUM, LOW
+}
+
+// LiveActivityItem describes an active or blocked database process.
+type LiveActivityItem struct {
+	PID           int64    `json:"pid"`
+	User          string   `json:"user"`
+	Database      string   `json:"database"`
+	State         string   `json:"state"` // active, idle in transaction, etc.
+	DurationMs    float64  `json:"durationMs"`
+	WaitEventType string   `json:"waitEventType,omitempty"` // Lock, IO, Client, etc.
+	WaitEvent     string   `json:"waitEvent,omitempty"`
+	Query         string   `json:"query"`
+	BlockingPID   int64    `json:"blockingPid,omitempty"`
+	BlockedPIDs   []int64  `json:"blockedPids,omitempty"`
+}
+
+// LockContentionTree represents the blocked query topology.
+type LockContentionTree struct {
+	RootBlockers        []LiveActivityItem `json:"rootBlockers"`
+	ActiveProcesses     []LiveActivityItem `json:"activeProcesses"`
+	TotalBlockedQueries int                `json:"totalBlockedQueries"`
+	ActiveLocksCount    int                `json:"activeLocksCount"`
+	HasContention       bool               `json:"hasContention"`
+}
+
+// PlanNodeDiff describes a difference between two execution plan nodes.
+type PlanNodeDiff struct {
+	Path          string  `json:"path"`
+	BaselineType  string  `json:"baselineType"`
+	CurrentType   string  `json:"currentType"`
+	BaselineTime  float64 `json:"baselineTime"`
+	CurrentTime   float64 `json:"currentTime"`
+	TimeDeltaMs   float64 `json:"timeDeltaMs"`
+	ChangeSummary string  `json:"changeSummary"`
+}
+
+// PlanDiffResult models the delta between two execution plans.
+type PlanDiffResult struct {
+	BaselineExecutionTime float64        `json:"baselineExecutionTime"` // ms
+	CurrentExecutionTime  float64        `json:"currentExecutionTime"`  // ms
+	TimeDeltaMs           float64        `json:"timeDeltaMs"`           // ms (negative = faster)
+	TimeDeltaPct          float64        `json:"timeDeltaPct"`          // percentage
+	BaselineBuffersHit    int64          `json:"baselineBuffersHit"`
+	CurrentBuffersHit     int64          `json:"currentBuffersHit"`
+	BaselineBuffersRead   int64          `json:"baselineBuffersRead"`
+	CurrentBuffersRead    int64          `json:"currentBuffersRead"`
+	NodeChanges           []PlanNodeDiff `json:"nodeChanges"`
+	Verdict               string         `json:"verdict"` // IMPROVED, REGRESSED, NEUTRAL
+	Summary               string         `json:"summary"`
+}
+
+// HypoSimulationResult stores the simulated cost impact of an index via HypoPG.
+type HypoSimulationResult struct {
+	Supported          bool    `json:"supported"`
+	ExtensionInstalled bool    `json:"extensionInstalled"`
+	OriginalCost       float64 `json:"originalCost"`
+	SimulatedCost      float64 `json:"simulatedCost"`
+	CostReductionPct   float64 `json:"costReductionPct"`
+	OriginalPlanType   string  `json:"originalPlanType"`
+	SimulatedPlanType  string  `json:"simulatedPlanType"`
+	IndexName          string  `json:"indexName"`
+	Columns            string  `json:"columns"`
+	Message            string  `json:"message"`
 }
 
 // BloatInfo represents estimated table and index disk bloat.
@@ -188,6 +272,8 @@ type SystemOverview struct {
 	BufferCacheHitRatio     float64 `json:"bufferCacheHitRatio"`
 	TotalQueriesTracked     int     `json:"totalQueriesTracked"`
 	UnderIndexedTablesCount int     `json:"underIndexedTablesCount"`
+	UnusedIndexesCount      int     `json:"unusedIndexesCount"`
+	ActiveLocksCount        int     `json:"activeLocksCount"`
 	BloatWarningCount       int     `json:"bloatWarningCount"`
 	WraparoundSafetyPercent float64 `json:"wraparoundSafetyPercent"`
 	ActiveAutovacuums       int     `json:"activeAutovacuums"`

@@ -3,12 +3,13 @@ import { Header } from './components/Header';
 import { SlowQueryTable } from './components/SlowQueryTable';
 import { ExplainVisualizer } from './components/ExplainVisualizer';
 import { IndexAdvisorCard } from './components/IndexAdvisorCard';
+import { LockContentionView } from './components/LockContentionView';
 import { BloatWatchdog } from './components/BloatWatchdog';
 import { CacheHitGauge } from './components/CacheHitGauge';
 import { useStats } from './hooks/useStats';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'queries' | 'explain' | 'advisor' | 'bloat' | 'cache'>('queries');
+  const [activeTab, setActiveTab] = useState<'queries' | 'explain' | 'advisor' | 'locks' | 'bloat' | 'cache'>('queries');
   const [explainPrefill, setExplainPrefill] = useState('');
 
   const {
@@ -16,14 +17,20 @@ export function App() {
     queries,
     cacheStats,
     recommendations,
+    unusedIndexes,
+    lockTree,
     bloatList,
     vacuumWorkers,
     wraparound,
     explainResult,
+    planDiff,
     isRefreshing,
     refreshAll,
     analyzePlan,
     executeQuery,
+    comparePlans,
+    simulateHypo,
+    downloadReport,
   } = useStats();
 
   const handleExplainQuery = (query: string) => {
@@ -38,6 +45,7 @@ export function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onRefresh={refreshAll}
+        onExportReport={downloadReport}
         isRefreshing={isRefreshing}
       />
 
@@ -49,14 +57,24 @@ export function App() {
         {activeTab === 'explain' && (
           <ExplainVisualizer
             initialResult={explainResult}
+            initialDiff={planDiff}
             onAnalyzePlan={analyzePlan}
             onExecuteQuery={executeQuery}
+            onComparePlans={comparePlans}
             prefilledQuery={explainPrefill}
           />
         )}
 
         {activeTab === 'advisor' && (
-          <IndexAdvisorCard recommendations={recommendations} />
+          <IndexAdvisorCard
+            recommendations={recommendations}
+            unusedIndexes={unusedIndexes}
+            onSimulateHypo={simulateHypo}
+          />
+        )}
+
+        {activeTab === 'locks' && (
+          <LockContentionView tree={lockTree} />
         )}
 
         {activeTab === 'bloat' && (
@@ -73,7 +91,7 @@ export function App() {
       </main>
 
       <footer className="border-t border-surface-border bg-surface/50 py-4 text-center text-xs text-gray-400 font-mono">
-        IndexLens v1.0.0 • Local-First PostgreSQL Performance Cockpit • Non-Invasive Read-Only Telemetry
+        IndexLens v1.1.0 • Local-First PostgreSQL Performance Cockpit • Non-Invasive Read-Only Telemetry
       </footer>
     </div>
   );

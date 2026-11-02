@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -46,9 +47,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/tables", s.handleTables)
 	s.mux.HandleFunc("GET /api/cache", s.handleCache)
 	s.mux.HandleFunc("POST /api/explain", s.handleExplain)
+	s.mux.HandleFunc("POST /api/explain/diff", s.handleExplainDiff)
 	s.mux.HandleFunc("GET /api/indexes/advisor", s.handleIndexesAdvisor)
+	s.mux.HandleFunc("GET /api/indexes/unused", s.handleIndexesUnused)
+	s.mux.HandleFunc("POST /api/indexes/simulate", s.handleIndexesSimulate)
+	s.mux.HandleFunc("GET /api/activity/locks", s.handleActivityLocks)
 	s.mux.HandleFunc("GET /api/autovacuum", s.handleAutovacuum)
 	s.mux.HandleFunc("GET /api/bloat", s.handleBloat)
+	s.mux.HandleFunc("GET /api/report/markdown", s.handleReportMarkdown)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +81,6 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enrich overview with cache and wraparound indicators
 	cacheStats, err := s.client.GetCacheStats(ctx)
 	if err == nil {
 		overview.BufferCacheHitRatio = cacheStats.OverallHitRatio
@@ -101,6 +106,16 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		overview.UnderIndexedTablesCount = underIndexed
 		overview.BloatWarningCount = bloatWarnings
+	}
+
+	unused, err := s.client.GetUnusedIndexes(ctx)
+	if err == nil {
+		overview.UnusedIndexesCount = len(unused)
+	}
+
+	locks, err := s.client.GetLockContention(ctx)
+	if err == nil {
+		overview.ActiveLocksCount = locks.ActiveLocksCount
 	}
 
 	writeJSON(w, http.StatusOK, overview)
@@ -183,7 +198,6 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 	var req explainRequest
 	_ = json.Unmarshal(body, &req)
 
-	// If explicit JSON plan provided
 	if strings.TrimSpace(req.Plan) != "" {
 		result, err := explain.ParsePlanJSON([]byte(req.Plan))
 		if err != nil {
@@ -194,7 +208,6 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If SQL query provided and connected to PostgreSQL
 	if strings.TrimSpace(req.Query) != "" && !s.demoMode && s.client != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
@@ -216,8 +229,44 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback to demo plan
 	writeJSON(w, http.StatusOK, model.GetDemoExplainResult())
+}
+
+type explainDiffRequest struct {
+	Baseline string `json:"baseline"`
+	Current  string `json:"current"`
+}
+
+func (s *Server) handleExplainDiff(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var req explainDiffRequest
+	_ = json.Unmarshal(body, &req)
+
+	if strings.TrimSpace(req.Baseline) == "" || strings.TrimSpace(req.Current) == "" {
+		// Return demo plan diff if inputs are empty
+		writeJSON(w, http.StatusOK, model.GetDemoPlanDiff())
+		return
+	}
+
+	baseRes, err := explain.ParsePlanJSON([]byte(req.Baseline))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse baseline plan: "+err.Error())
+		return
+	}
+
+	currRes, err := explain.ParsePlanJSON([]byte(req.Current))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse current plan: "+err.Error())
+		return
+	}
+
+	diff := explain.ComparePlans(baseRes, currRes)
+	writeJSON(w, http.StatusOK, diff)
 }
 
 func (s *Server) handleIndexesAdvisor(w http.ResponseWriter, r *http.Request) {
@@ -231,18 +280,81 @@ func (s *Server) handleIndexesAdvisor(w http.ResponseWriter, r *http.Request) {
 
 	tables, err := s.client.GetTableStats(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to retrieve table stats for index advisor: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to retrieve table stats: "+err.Error())
 		return
 	}
 
 	queries, err := s.client.GetSlowQueries(ctx, 100, "total")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to retrieve query stats for index advisor: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to retrieve query stats: "+err.Error())
 		return
 	}
 
 	recs := synthesizer.AdviseIndexes(tables, queries)
 	writeJSON(w, http.StatusOK, recs)
+}
+
+func (s *Server) handleIndexesUnused(w http.ResponseWriter, r *http.Request) {
+	if s.demoMode {
+		writeJSON(w, http.StatusOK, model.GetDemoUnusedIndexes())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	unused, err := s.client.GetUnusedIndexes(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query unused indexes: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, unused)
+}
+
+type simulateRequest struct {
+	DDL   string `json:"ddl"`
+	Query string `json:"query"`
+}
+
+func (s *Server) handleIndexesSimulate(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	var req simulateRequest
+	_ = json.Unmarshal(body, &req)
+
+	if s.demoMode || strings.TrimSpace(req.Query) == "" || strings.TrimSpace(req.DDL) == "" {
+		writeJSON(w, http.StatusOK, model.GetDemoHypoSimulation())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	res, err := synthesizer.SimulateHypoPG(ctx, s.client, req.DDL, req.Query)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "simulation failed: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleActivityLocks(w http.ResponseWriter, r *http.Request) {
+	if s.demoMode {
+		writeJSON(w, http.StatusOK, model.GetDemoLockContention())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	locks, err := s.client.GetLockContention(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query lock contention: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, locks)
 }
 
 func (s *Server) handleAutovacuum(w http.ResponseWriter, r *http.Request) {
@@ -293,6 +405,75 @@ func (s *Server) handleBloat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, bloat)
+}
+
+func (s *Server) handleReportMarkdown(w http.ResponseWriter, r *http.Request) {
+	var queries []model.QueryStat
+	var recs []model.IndexRecommendation
+	var unused []model.UnusedIndex
+	var bloat []model.BloatInfo
+
+	if s.demoMode {
+		queries = model.GetDemoQueries()
+		recs = model.GetDemoRecommendations()
+		unused = model.GetDemoUnusedIndexes()
+		bloat = model.GetDemoBloat()
+	} else {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		queries, _ = s.client.GetSlowQueries(ctx, 10, "total")
+		tables, _ := s.client.GetTableStats(ctx)
+		recs = synthesizer.AdviseIndexes(tables, queries)
+		unused, _ = s.client.GetUnusedIndexes(ctx)
+		bloat, _ = watchdog.EstimateTableBloat(ctx, s.client)
+	}
+
+	var md strings.Builder
+	md.WriteString("# IndexLens PostgreSQL Performance & Diagnostic Report\n\n")
+	md.WriteString(fmt.Sprintf("*Generated on: %s*\n\n", time.Now().UTC().Format(time.RFC1123)))
+
+	md.WriteString("## 1. Top Identified Missing Indexes (Action Items)\n\n")
+	for i, r := range recs {
+		md.WriteString(fmt.Sprintf("### [%d] Table: `%s` (Priority: %s)\n", i+1, r.TableName, r.Priority))
+		md.WriteString(fmt.Sprintf("- **Reason**: %s\n", r.Reason))
+		md.WriteString(fmt.Sprintf("- **Estimated Size**: %s | **Write Penalty**: %s\n", r.EstimatedSizePretty, r.WritePenalty))
+		md.WriteString(fmt.Sprintf("```sql\n%s\n```\n\n", r.DDL))
+	}
+
+	if len(unused) > 0 {
+		md.WriteString("## 2. Unused & Redundant Indexes (Cleanup Candidates)\n\n")
+		for i, u := range unused {
+			md.WriteString(fmt.Sprintf("### [%d] Index: `%s` on `%s` (%s)\n", i+1, u.IndexName, u.TableName, u.IndexSizePretty))
+			md.WriteString(fmt.Sprintf("- **Reason**: %s\n", u.Reason))
+			md.WriteString(fmt.Sprintf("```sql\n%s\n```\n\n", u.DropDDL))
+		}
+	}
+
+	md.WriteString("## 3. High Latency Queries\n\n")
+	md.WriteString("| Calls | Mean Latency | Total Duration | Cache Hit % | Query Snippet |\n")
+	md.WriteString("|---|---|---|---|---|\n")
+	for _, q := range queries {
+		snippet := q.Query
+		if len(snippet) > 60 {
+			snippet = snippet[:57] + "..."
+		}
+		md.WriteString(fmt.Sprintf("| %d | %.1f ms | %.1f s | %.1f%% | `%s` |\n",
+			q.Calls, q.MeanExecTime, q.TotalExecTime/1000.0, q.CacheHitRatio, strings.ReplaceAll(snippet, "|", "/")))
+	}
+	md.WriteString("\n")
+
+	md.WriteString("## 4. Table Bloat & Dead Tuples\n\n")
+	md.WriteString("| Relation | Total Size | Dead Tuples | Dead % | Estimated Bloat |\n")
+	md.WriteString("|---|---|---|---|---|\n")
+	for _, b := range bloat {
+		md.WriteString(fmt.Sprintf("| `%s` | %s | %d | %.1f%% | %s |\n",
+			b.TableName, b.SizePretty, b.DeadTuples, b.DeadTupleRatio, b.BloatPretty))
+	}
+
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="indexlens_report.md"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(md.String()))
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, data any) {

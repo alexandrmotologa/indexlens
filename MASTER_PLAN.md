@@ -2,7 +2,7 @@
 
 > **Non-Invasive PostgreSQL Slow Query Explainer, Autovacuum Watchdog & Missing Index Synthesizer**
 >
-> High-performance database optimization cockpit and query diagnostics engine for PostgreSQL. Reads non-invasively from `pg_stat_statements`, visualizes `EXPLAIN (ANALYZE, BUFFERS)` plans as interactive execution flamegraphs, synthesizes non-blocking `CREATE INDEX CONCURRENTLY` suggestions, and guards against autovacuum lag and table bloat.
+> High-performance database optimization cockpit and query diagnostics engine for PostgreSQL. Reads non-invasively from `pg_stat_statements`, visualizes `EXPLAIN (ANALYZE, BUFFERS)` plans as interactive execution flamegraphs, synthesizes non-blocking `CREATE INDEX CONCURRENTLY` suggestions, guards against autovacuum lag, table bloat, and lock contention, and provides regression plan diffs and unused index detection.
 
 ---
 
@@ -10,15 +10,17 @@
 
 PostgreSQL powers modern transactional applications. As data sets expand, engineering teams face key challenges:
 1. **Cryptic Execution Plans**: Developers run `EXPLAIN (ANALYZE, BUFFERS)` and receive 80-line nested textual trees. Isolating whether latency was caused by sequential table scans, buffer cache misses, or disk spills is slow and error-prone.
-2. **Missing Indexes & Locking Risks**: Queries filtering on multiple columns scan millions of rows because only single-column indexes exist. Standard `CREATE INDEX` locks tables against writes, risking downtime.
-3. **The Autovacuum & Bloat Trap**: PostgreSQL uses Multi-Version Concurrency Control (MVCC). If autovacuum settings lag behind write velocity, tables and indexes accumulate dead tuples, degrading cache hit ratios and eventually risking catastrophic Transaction ID (TxID) Wraparound outages.
-4. **Cloud SaaS Expense and Data Privacy**: Cloud database monitoring products charge hundreds of dollars per instance and require exfiltrating query text and metadata outside corporate security boundaries.
+2. **Missing Indexes & Write Penalties**: Queries filtering on multiple columns scan millions of rows because only single-column indexes exist, while unused or redundant indexes penalize every write and waste gigabytes of `shared_buffers`.
+3. **The Autovacuum & Bloat Trap**: If autovacuum settings lag behind write velocity, tables and indexes accumulate dead tuples, degrading cache hit ratios and eventually risking catastrophic Transaction ID (TxID) Wraparound outages.
+4. **Lock Contention Blindspots**: Spikes in latency are often caused by uncommitted locks or `idle in transaction` queries holding locks on critical relations.
 
 IndexLens delivers a non-invasive, open-source, local-first performance cockpit:
-- **Zero-Impact Polling**: Connects with read-only credentials to `pg_stat_statements`, `pg_stat_user_tables`, `pg_statio_user_tables`, and `pg_stat_progress_vacuum`.
+- **Zero-Impact Polling**: Connects with read-only credentials to `pg_stat_statements`, `pg_stat_user_tables`, `pg_statio_user_tables`, and `pg_stat_activity`.
 - **Interactive EXPLAIN Flamegraph**: Transforms complex JSON execution plans into visual flamegraphs, color-coding high-cost nodes, buffer cache misses, and memory sorts.
-- **Missing Index Synthesizer**: Correlates sequential scans with active query filter patterns, automatically generating non-blocking DDL:
-  `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_user_created ON orders (user_id, created_at DESC);`.
+- **Missing Index Synthesizer**: Correlates sequential scans with active query filter patterns, automatically generating non-blocking DDL with index size and write-penalty projections.
+- **Unused & Redundant Index Cleaner**: Identifies zero-scan and redundant prefix indexes with non-blocking `DROP INDEX CONCURRENTLY` DDL.
+- **Plan Diff & Regression Analyzer**: Compares execution plans side-by-side to verify speedups or catch query plan regressions.
+- **Live Lock Contention Graph**: Visualizes blocking transaction dependencies and connection wait events.
 - **Autovacuum Watchdog & Bloat Estimator**: Calculates dead tuple ratios, tracks autovacuum worker queue lag, and alerts before transaction ID wraparound thresholds are approached.
 - **Dual Mode Operation**: Connects to live PostgreSQL databases or runs in autonomous demo mode with realistic production telemetry for offline evaluation.
 
@@ -33,16 +35,19 @@ IndexLens delivers a non-invasive, open-source, local-first performance cockpit:
 |  Non-Invasive Metadata Poller   |                 |    Visual EXPLAIN Flamegraph  |
 |  * pg_stat_statements Metrics   |                 |  * EXPLAIN (ANALYZE, BUFFERS) |
 |  * pg_stat_user_tables Scans    |                 |  * Node Cost & Duration Map   |
+|  * pg_stat_activity Lock Graph  |                 |  * Plan Diff Comparison View  |
 |  * pg_statio Buffer Cache Hits  |                 |  * Disk Spill & Temp File Warn|
 +-------+-------------------------+                 +-----------------------+-------+
         |                                                                   |
         +---------------------------------+---------------------------------+
                                           |
                         +-----------------v-----------------+
-                        |    Missing Index Synthesizer      |
+                        |    Missing & Unused Index Engine  |
                         |  * Seq Scan to Filter Correlation |
                         |  * Composite B-Tree Column Ranker |
                         |  * CREATE INDEX CONCURRENTLY DDL  |
+                        |  * Unused & Redundant Index DROP  |
+                        |  * In-Memory HypoPG Verification  |
                         +-----------------+-----------------+
                                           |
                         +-----------------v-----------------+
@@ -55,8 +60,9 @@ IndexLens delivers a non-invasive, open-source, local-first performance cockpit:
                         +-----------------v-----------------+
                         |   Interactive Web Studio & CLI    |
                         |  * Query Latency Cockpit          |
-                        |  * Cache Hit Gauge (> 99%)        |
-                        |  * 1-Click DDL Copy (Port 9920)   |
+                        |  * Real-Time Lock Contention Tree |
+                        |  * CI/CD Quality Gate Check       |
+                        |  * 1-Click Markdown Report Export |
                         +-----------------------------------+
 ```
 
@@ -68,24 +74,28 @@ IndexLens delivers a non-invasive, open-source, local-first performance cockpit:
 indexlens/
 ├── cmd/
 │   └── indexlens/
-│       └── main.go               # Unified CLI: serve, explain, bloat, advice
+│       └── main.go               # Unified CLI: serve, explain, bloat, advice, unused, locks, check, report
 ├── internal/
 │   ├── model/
-│   │   ├── types.go              # Core data structs for queries, plans, tables, bloat
+│   │   ├── types.go              # Core data structs for queries, plans, tables, bloat, locks, unused
 │   │   └── demo_data.go          # Realistic production simulation telemetry
 │   ├── poller/
 │   │   ├── client.go             # Read-only PostgreSQL connection pool (pgx/v5)
 │   │   ├── stat_statements.go    # Query frequency, mean/total duration, buffer metrics
 │   │   ├── stat_tables.go        # seq_scan vs idx_scan & live/dead tuples
-│   │   └── statio.go             # Heap & index buffer cache hit ratio calculator
+│   │   ├── statio.go             # Heap & index buffer cache hit ratio calculator
+│   │   ├── unused_indexes.go     # Zero-scan and redundant prefix index detector
+│   │   └── locks.go              # Real-time lock contention and blocking PID tree
 │   ├── explain/
 │   │   ├── parser.go             # EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS) AST parser
 │   │   ├── node_tree.go          # Recursive execution node hierarchy & flamegraph builder
-│   │   └── bottlenecks.go        # Identifies slow nodes, disk spills, and high buffers
+│   │   ├── bottlenecks.go        # Identifies slow nodes, disk spills, and high buffers
+│   │   └── diff.go               # Plan diff engine comparing baseline vs current
 │   ├── synthesizer/
 │   │   ├── index_advisor.go      # Correlates filter predicates with high-cost scans
 │   │   ├── column_ranker.go      # Orders equality columns before range and sort keys
-│   │   └── ddl_generator.go      # Generates safe CREATE INDEX CONCURRENTLY statements
+│   │   ├── ddl_generator.go      # Generates safe CREATE INDEX CONCURRENTLY statements
+│   │   └── hypo.go               # B-Tree index size estimator & HypoPG simulator
 │   ├── watchdog/
 │   │   ├── bloat_estimator.go    # Estimates wasted disk space in tables and indexes
 │   │   ├── autovacuum_queue.go   # Monitors active vacuum workers in pg_stat_progress_vacuum
@@ -97,10 +107,13 @@ indexlens/
 ├── web/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Header.tsx            # Navigation, connection status, quick stats
+│   │   │   ├── Header.tsx            # Navigation, connection status, quick stats, report export
 │   │   │   ├── SlowQueryTable.tsx    # Queries sorted by total time, calls, mean time
 │   │   │   ├── ExplainVisualizer.tsx # Visual execution plan flamegraph & node inspector
-│   │   │   ├── IndexAdvisorCard.tsx  # Recommended indexes with 1-click SQL copy
+│   │   │   ├── PlanDiffViewer.tsx    # Side-by-side plan diff with timing and node transformation deltas
+│   │   │   ├── IndexAdvisorCard.tsx  # Recommended indexes + Unused/Redundant cleanup switcher
+│   │   │   ├── UnusedIndexList.tsx   # Unused & duplicate indexes list with safe DROP DDL
+│   │   │   ├── LockContentionView.tsx# Real-time lock contention tree & wait events
 │   │   │   ├── BloatWatchdog.tsx     # Table dead tuples and wasted space chart
 │   │   │   └── CacheHitGauge.tsx     # Buffer cache hit ratio gauge
 │   │   ├── hooks/
@@ -128,99 +141,17 @@ indexlens/
 
 ---
 
-## 3. Step-by-Step Implementation Roadmap
+## 3. Implementation Status (All Phases Completed)
 
-### Step 1: Go Module & Core Domain Models
-- Initialize Go module `github.com/alexandrmotologa/indexlens`.
-- Define unified domain models in `internal/model/types.go`:
-  - `QueryStat`: Query ID, SQL text, calls, total time, mean time, min/max time, rows, shared blocks hit/read, local/temp blocks.
-  - `TableStat`: Schema, table name, sequential scans, index scans, live tuples, dead tuples, dead ratio, last vacuum/autovacuum.
-  - `CacheHitStats`: Global heap/index hit ratios, per-table cache metrics.
-  - `ExplainPlanNode`: Recursive plan tree, node type, relation name, index name, cost, startup time, total time, actual rows, loops, shared/temp buffers, sort method, filter predicate.
-  - `Bottleneck`: Severity, node ID, message, recommendation, metric.
-  - `IndexRecommendation`: Table, suggested index name, columns, reason, estimated impact, non-blocking DDL.
-  - `BloatInfo`: Table name, size bytes, bloat bytes, bloat ratio, dead tuples.
-  - `WraparoundInfo`: Database name, current txid age, max age limit, safety percentage, danger status.
-  - `AutovacuumWorker`: PID, table, phase, heap blocks scanned, total blocks, progress percentage.
-- Implement `internal/model/demo_data.go` providing realistic PostgreSQL statistics for demo/offline execution.
-
-### Step 2: Non-Invasive Database Poller (`internal/poller`)
-- Implement `client.go` with `jackc/pgx/v5/pgxpool`:
-  - Read-only connection establishment.
-  - Feature detection: verify `pg_stat_statements` is installed; handle graceful degradation if missing.
-- Implement `stat_statements.go`:
-  - Query `pg_stat_statements` sorting by total time or mean time.
-  - Calculate per-query cache hit ratio: `shared_blks_hit / (shared_blks_hit + shared_blks_read) * 100`.
-- Implement `stat_tables.go`:
-  - Query `pg_stat_user_tables` to collect sequential scan vs index scan counts and live/dead tuple counts.
-- Implement `statio.go`:
-  - Query `pg_statio_user_tables` and `pg_statio_user_indexes` to compute buffer cache hit rates.
-
-### Step 3: EXPLAIN Parser & Visual Flamegraph Engine (`internal/explain`)
-- Implement `parser.go`:
-  - Parse PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` JSON structures.
-  - Build recursive `PlanNode` hierarchy with inclusive time and computed exclusive time.
-- Implement `node_tree.go`:
-  - Calculate width percentages for flamegraph rendering.
-  - Extract buffer read vs hit proportions per node.
-- Implement `bottlenecks.go`:
-  - Detect high runtime sinks (> 40% query duration).
-  - Detect disk spills (`external merge Disk`, `Workfile Used`).
-  - Detect heavy sequential scans on large tables.
-  - Detect stale statistics: discrepancy between `Plan Rows` and `Actual Rows` > 10x.
-
-### Step 4: Missing Index Synthesizer (`internal/synthesizer`)
-- Implement `column_ranker.go`:
-  - Order equality columns (`=`, `IS NULL`) first.
-  - Order range/inequality columns (`<`, `>`, `BETWEEN`, `IN`, `LIKE`) second.
-  - Order sort keys (`ORDER BY`) last.
-- Implement `index_advisor.go`:
-  - Correlate sequential scan tables with filter conditions from execution plans and slow queries.
-  - Detect partial index opportunities (`WHERE deleted_at IS NULL` or `WHERE status = 'pending'`).
-- Implement `ddl_generator.go`:
-  - Generate production-safe `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_... ON ... (...)`.
-  - Provide estimated impact notes.
-
-### Step 5: Autovacuum Watchdog & Bloat Estimator (`internal/watchdog`)
-- Implement `bloat_estimator.go`:
-  - Compute dead tuple ratios and estimate physical page bloat.
-- Implement `autovacuum_queue.go`:
-  - Query `pg_stat_progress_vacuum` for active workers, current phase, and completion progress.
-- Implement `wraparound_guard.go`:
-  - Query `age(datfrozenxid)` and compute headroom against `autovacuum_freeze_max_age`.
-
-### Step 6: Web Studio Backend & REST API (`internal/server`)
-- Implement REST API endpoints:
-  - `GET /api/health`: Health and connection state.
-  - `GET /api/overview`: Global metrics, cache hit ratio, active connections, bloat stats.
-  - `GET /api/queries`: Slow queries with search and sort.
-  - `POST /api/explain`: Ingests JSON plan and returns flamegraph nodes and bottleneck diagnostics.
-  - `GET /api/tables`: Table statistics and dead tuple ratios.
-  - `GET /api/indexes/advisor`: Synthesized index suggestions with copyable DDL.
-  - `GET /api/autovacuum`: Active workers and TxID wraparound metrics.
-- Implement static asset serving with embedded files (`embed.FS`).
-
-### Step 7: React 19 Web Studio (`web/`)
-- Initialize Vite React 19 + TypeScript + Tailwind CSS application.
-- Build components:
-  - `Header`: Connection status, cache hit ratio badge, wraparound safety badge, demo mode toggle.
-  - `SlowQueryTable`: Sortable table with search, mean latency, total time, calls, and buffer hit breakdown.
-  - `ExplainVisualizer`: Interactive flamegraph view with zoom, node inspector, and bottleneck alert banners.
-  - `IndexAdvisorCard`: Recommended indexes with 1-click SQL copy, explanation, and impact estimation.
-  - `BloatWatchdog`: Dead tuples bar chart, table bloat table, and running autovacuum progress bar.
-  - `CacheHitGauge`: Radial / bar gauge showing heap and index cache hit rates with 99% threshold alert.
-- Compile and bundle frontend assets into `internal/server/dist/`.
-
-### Step 8: CLI Commands & End-to-End Verification (`cmd/indexlens`)
-- Implement unified CLI:
-  - `indexlens serve [--dsn ...] [--port 9920] [--demo]`
-  - `indexlens explain --file plan.json`
-  - `indexlens bloat [--dsn ...]`
-  - `indexlens advice [--dsn ...]`
-- Write comprehensive unit tests for all packages:
-  - `internal/poller`
-  - `internal/explain`
-  - `internal/synthesizer`
-  - `internal/watchdog`
-  - `internal/server`
-- Verify binary builds cleanly and all tests pass with 100% green status.
+- [x] **Phase 1: Go Module & Core Domain Models**: Initialized Go module and structured domain models.
+- [x] **Phase 2: Non-Invasive Database Poller**: Implemented `pg_stat_statements`, `pg_stat_user_tables`, `pg_statio_user_tables`.
+- [x] **Phase 3: EXPLAIN Parser & Visual Flamegraph Engine**: AST tree generator, exclusive duration calculator, and bottleneck detector.
+- [x] **Phase 4: Missing Index Synthesizer**: B-Tree column ranker (Equality $\to$ Range $\to$ Sort), partial index detection, and `CREATE INDEX CONCURRENTLY` DDL generator.
+- [x] **Phase 5: Autovacuum Watchdog & Bloat Estimator**: Table bloat calculations, worker queue tracking, and TxID wraparound safety horizon.
+- [x] **Phase 6: Web Studio Backend & REST API**: HTTP endpoints with embedded static asset distribution (`embed.FS`).
+- [x] **Phase 7: React 19 Web Studio**: Interactive Cockpit, Flamegraph visualizer, Index cards, Bloat gauges.
+- [x] **Phase 8: Unused & Redundant Index Cleaner**: Zero-scan detection and prefix index deduplication (`DROP INDEX CONCURRENTLY`).
+- [x] **Phase 9: Live Lock Contention Tracker**: `pg_stat_activity` and `pg_locks` real-time blocker hierarchy.
+- [x] **Phase 10: Plan Diff & Regression Engine**: Baseline vs Current plan comparison with structural and timing deltas.
+- [x] **Phase 11: HypoPG In-Memory Verification & Index Sizing**: B-Tree byte sizing formula and HypoPG simulation.
+- [x] **Phase 12: CI/CD Quality Gate & Report Exporter**: CLI `check` command with exit codes and Markdown report generation.
