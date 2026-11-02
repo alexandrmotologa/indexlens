@@ -25,12 +25,18 @@ export const IndexAdvisorCard: React.FC<IndexAdvisorCardProps> = ({
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const handleSimulate = async (id: string, ddl: string, table: string) => {
+  const handleSimulate = async (id: string, ddl: string, table: string, columns: string[] = [], predicate = '') => {
     if (!onSimulateHypo) return;
     setSimulatingId(id);
     try {
-      const dummyQuery = `SELECT * FROM ${table} LIMIT 100`;
-      const res = await onSimulateHypo(ddl, dummyQuery);
+      let testQuery = `SELECT * FROM ${table}`;
+      if (predicate) {
+        testQuery += ` WHERE ${predicate}`;
+      } else if (columns.length > 0) {
+        testQuery += ` WHERE ${columns[0]} IS NOT NULL`;
+      }
+      testQuery += ` LIMIT 50`;
+      const res = await onSimulateHypo(ddl, testQuery);
       setSimulationResults((prev) => ({ ...prev, [id]: res }));
     } catch {
       // Ignored
@@ -186,7 +192,7 @@ export const IndexAdvisorCard: React.FC<IndexAdvisorCardProps> = ({
 
                       <div className="absolute right-2 top-2.5 flex items-center space-x-2">
                         <button
-                          onClick={() => handleSimulate(rec.id, rec.ddl, rec.tableName)}
+                          onClick={() => handleSimulate(rec.id, rec.ddl, rec.tableName, rec.columns, rec.predicate)}
                           disabled={simulatingId === rec.id}
                           className="flex items-center space-x-1 px-2.5 py-1.5 rounded-md bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-medium border border-purple-500/30 transition-colors shadow-sm disabled:opacity-50"
                           title="Verify index benefit in memory using HypoPG"
