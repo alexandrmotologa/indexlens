@@ -1,0 +1,27 @@
+{
+  "name": "indexlens",
+  "version": "1.0.0",
+  "description": "IndexLens is a non-invasive PostgreSQL slow query explainer, autovacuum watchdog, and missing index synthesizer. It runs as a self-contained local binary or daemon, reading statistics directly from `pg_stat_statements` and PostgreSQL system catalog views with zero overhead on production workloads.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexandrmotologa/indexlens.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/alexandrmotologa/indexlens/issues"
+  },
+  "homepage": "https://github.com/alexandrmotologa/indexlens#readme",
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

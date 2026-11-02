@@ -1,0 +1,276 @@
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+function buildLogoSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="slate-plate" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <linearGradient id="slate-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+
+    <linearGradient id="slate-highlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+
+    <linearGradient id="obsidian-plate" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0b0f19"/>
+    </linearGradient>
+
+    <filter id="subtle-shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.16" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <g transform="translate(512, 512)" filter="url(#subtle-shadow)">
+
+      <!-- Hexagonal Architectural Gateway Frame -->
+      <polygon points="
+        0,-415
+        360,-207
+        360,207
+        0,415
+        -360,207
+        -360,-207
+      " fill="none" stroke="#0f172a" stroke-width="36" stroke-linejoin="round" />
+
+      <!-- Inner Dashed Cyan Hexagon Accents -->
+      <polygon points="
+        0,-378
+        328,-189
+        328,189
+        0,378
+        -328,189
+        -328,-189
+      " fill="none" stroke="#00f5ff" stroke-width="4" opacity="0.45" stroke-dasharray="16, 12" />
+
+      <!-- 100% Watertight Solid Base Silhouette -->
+      <path d="
+        M 0 -220
+        L -60 -210 L -120 -180 L -155 -340 L -175 -395 L -150 -365 L -115 -170
+        L -180 -100 L -230 -20 L -245 60 L -195 120 L -235 190 L -240 270 L -175 325 L -90 355 L 0 365
+        L 90 355 L 175 325 L 240 270 L 235 190 L 195 120 L 245 60 L 230 -20 L 180 -100
+        L 115 -170 L 150 -365 L 175 -395 L 155 -340 L 120 -180 L 60 -210 Z
+      " fill="#0b0f19" stroke="#0b0f19" stroke-width="2" />
+
+      <!-- ================= LYNX EARS & APICAL TUFTS ================= -->
+      <!-- Left Ear Outer Shell -->
+      <polygon points="-60,-210 -120,-180 -155,-340 -100,-210" fill="url(#obsidian-plate)" />
+      <!-- Left Iconic Lynx Tuft (Extending past ear tip) -->
+      <polygon points="-120,-180 -155,-340 -175,-395 -150,-365 -115,-170" fill="url(#cyan-glow)" />
+      <!-- Left Inner Ear Cavity -->
+      <polygon points="-70,-200 -115,-175 -145,-300 -95,-190" fill="#070c14" />
+      <polygon points="-80,-195 -110,-175 -130,-270" fill="#00f5ff" opacity="0.65" />
+
+      <!-- Right Ear Outer Shell (Symmetrical) -->
+      <polygon points="60,-210 120,-180 155,-340 100,-210" fill="url(#slate-plate)" />
+      <!-- Right Iconic Lynx Tuft -->
+      <polygon points="120,-180 155,-340 175,-395 150,-365 115,-170" fill="url(#cyan-glow)" />
+      <!-- Right Inner Ear Cavity -->
+      <polygon points="70,-200 115,-175 145,-300 95,-190" fill="#070c14" />
+      <polygon points="80,-195 110,-175 130,-270" fill="#00f5ff" opacity="0.65" />
+
+      <!-- ================= FOREHEAD & CRANIAL CREST ================= -->
+      <polygon points="0,-220 -60,-210 -70,-150 0,-155" fill="url(#slate-plate)" />
+      <polygon points="0,-220 60,-210 70,-150 0,-155" fill="url(#slate-light)" />
+
+      <!-- Upper Brow Plates -->
+      <polygon points="-60,-210 -120,-180 -115,-120 -70,-150" fill="url(#obsidian-plate)" />
+      <polygon points="60,-210 120,-180 115,-120 70,-150" fill="url(#slate-plate)" />
+
+      <!-- Central Hexagonal Index Node Crest -->
+      <polygon points="0,-155 -38,-120 0,-85 38,-120" fill="#0f172a" stroke="#00f5ff" stroke-width="2" />
+      <circle cx="0" cy="-120" r="5" fill="#00f5ff" />
+      <line x1="0" y1="-155" x2="0" y2="-85" stroke="#00f5ff" stroke-width="1.5" opacity="0.8" />
+      <line x1="-38" y1="-120" x2="38" y2="-120" stroke="#00f5ff" stroke-width="1.5" opacity="0.8" />
+
+      <!-- Forehead to Nose Transition Facets -->
+      <polygon points="-70,-150 -115,-120 -60,-85 0,-85" fill="#1e293b" />
+      <polygon points="70,-150 115,-120 60,-85 0,-85" fill="#334155" />
+
+      <!-- Eyebrow Ridge Plates -->
+      <polygon points="0,-85 -60,-85 -35,-50 0,-50" fill="#334155" />
+      <polygon points="0,-85 60,-85 35,-50 0,-50" fill="#475569" />
+
+      <!-- ================= PREDATOR ALMOND EYES ================= -->
+      <!-- Left Eye Orbital Socket (Sharp almond shape canted upward) -->
+      <polygon points="-115,-90 -55,-80 -40,-52 -100,-62" fill="#070c14" stroke="#00f5ff" stroke-width="2" />
+      <!-- Left Glowing Cyan Iris -->
+      <polygon points="-105,-85 -60,-77 -48,-56 -92,-64" fill="url(#cyan-glow)" />
+      <!-- Left Slit Pupil -->
+      <polygon points="-74,-82 -70,-72 -74,-62 -78,-72" fill="#030712" />
+      <circle cx="-69" cy="-74" r="2.5" fill="#ffffff" />
+
+      <!-- Right Eye Orbital Socket (Sharp almond shape canted upward) -->
+      <polygon points="115,-90 55,-80 40,-52 100,-62" fill="#070c14" stroke="#00f5ff" stroke-width="2" />
+      <!-- Right Glowing Cyan Iris -->
+      <polygon points="105,-85 60,-77 48,-56 92,-64" fill="url(#cyan-glow)" />
+      <!-- Right Slit Pupil -->
+      <polygon points="74,-82 70,-72 74,-62 78,-72" fill="#030712" />
+      <circle cx="69" cy="-74" r="2.5" fill="#ffffff" />
+
+      <!-- Under-Eye Cheek Bridges (Eliminates dark voids) -->
+      <polygon points="-100,-62 -40,-52 -25,-10 -90,-15" fill="#1e293b" />
+      <polygon points="100,-62 40,-52 25,-10 90,-15" fill="#334155" />
+
+      <!-- ================= TEMPORAL CHEEK RUFFS ================= -->
+      <!-- Left Lateral Facial Tufts -->
+      <polygon points="-115,-120 -180,-100 -145,-45 -100,-62" fill="url(#obsidian-plate)" />
+      <polygon points="-180,-100 -230,-20 -165,10 -145,-45" fill="#0f172a" />
+      <polygon points="-145,-45 -165,10 -90,-15" fill="#1e293b" />
+
+      <polygon points="-230,-20 -245,60 -180,70 -165,10" fill="url(#slate-plate)" />
+      <polygon points="-165,10 -180,70 -115,55 -90,-15" fill="#334155" />
+      <polygon points="-245,60 -195,120 -140,85 -180,70" fill="#1e293b" />
+      <!-- Left Cyan Cheek Vector -->
+      <line x1="-230" y1="-20" x2="-245" y2="60" stroke="#00f5ff" stroke-width="2.5" opacity="0.75" />
+
+      <!-- Right Lateral Facial Tufts (Symmetrical) -->
+      <polygon points="115,-120 180,-100 145,-45 100,-62" fill="url(#slate-plate)" />
+      <polygon points="180,-100 230,-20 165,10 145,-45" fill="#1e293b" />
+      <polygon points="145,-45 165,10 90,-15" fill="#334155" />
+
+      <polygon points="230,-20 245,60 180,70 165,10" fill="url(#slate-light)" />
+      <polygon points="165,10 180,70 115,55 90,-15" fill="url(#slate-highlight)" />
+      <polygon points="245,60 195,120 140,85 180,70" fill="#334155" />
+      <!-- Right Cyan Cheek Vector -->
+      <line x1="230" y1="-20" x2="245" y2="60" stroke="#00f5ff" stroke-width="2.5" opacity="0.75" />
+
+      <!-- ================= SNOUT, MUZZLE & JAW ================= -->
+      <!-- Bridge of Nose -->
+      <polygon points="0,-50 -25,-10 0,25 25,-10" fill="url(#slate-plate)" />
+      <polygon points="0,-50 -25,-10 0,0" fill="#1e293b" />
+      <polygon points="0,-50 25,-10 0,0" fill="#334155" />
+
+      <!-- Nose Tip -->
+      <polygon points="-16,25 16,25 0,45" fill="#070c14" stroke="#00f5ff" stroke-width="1.5" />
+      <circle cx="0" cy="35" r="2.5" fill="#00f5ff" />
+
+      <!-- Lateral Whisker Pads (Titanium slate, smooth horizontal ruffs) -->
+      <polygon points="-16,25 -80,45 -40,80 0,58" fill="#475569" />
+      <polygon points="16,25 80,45 40,80 0,58" fill="#64748b" />
+
+      <polygon points="-80,45 -140,85 -85,105 -40,80" fill="#334155" />
+      <polygon points="80,45 140,85 85,105 40,80" fill="#475569" />
+
+      <!-- Chin Plate -->
+      <polygon points="0,58 -30,85 0,118 30,85" fill="url(#obsidian-plate)" />
+      <polygon points="0,85 -18,108 0,118 18,108" fill="#070c14" stroke="#00f5ff" stroke-width="1" />
+
+      <!-- ================= CHEST ARMOR & OPTICAL LENS ================= -->
+      <!-- Pectoral Shield Plates -->
+      <polygon points="-85,105 -140,85 -165,150 -95,165" fill="#0f172a" />
+      <polygon points="85,105 140,85 165,150 95,165" fill="#1e293b" />
+
+      <polygon points="0,118 -85,105 -95,165 0,185" fill="#1e293b" />
+      <polygon points="0,118 85,105 95,165 0,185" fill="#334155" />
+
+      <!-- Muscular Obsidian Shoulders -->
+      <polygon points="-165,150 -235,190 -240,270 -160,240" fill="#070c14" />
+      <polygon points="165,150 235,190 240,270 160,240" fill="#1e293b" />
+
+      <polygon points="-160,240 -240,270 -175,325 -115,285" fill="#1e293b" />
+      <polygon points="160,240 240,270 175,325 115,285" fill="#334155" />
+
+      <!-- Central Breastplate -->
+      <polygon points="0,185 -95,165 -115,285 0,315" fill="url(#obsidian-plate)" />
+      <polygon points="0,185 95,165 115,285 0,315" fill="url(#slate-plate)" />
+
+      <!-- Base Keel Plate -->
+      <polygon points="0,315 -115,285 -90,355 0,365" fill="#070c14" />
+      <polygon points="0,315 115,285 90,355 0,365" fill="#1e293b" />
+
+      <!-- ================= THE OPTICAL TELEMETRY LENS ================= -->
+      <!-- Hexagonal Optical Lens Chamber -->
+      <polygon points="
+        0,210
+        46,235
+        46,285
+        0,310
+        -46,285
+        -46,235
+      " fill="#030712" stroke="#00f5ff" stroke-width="2.5" />
+
+      <!-- Outer Telemetry Ring -->
+      <circle cx="0" cy="260" r="24" fill="none" stroke="#00f5ff" stroke-width="2" stroke-dasharray="5, 3" opacity="0.8" />
+      <!-- Inner Refractive Lens Aperture -->
+      <circle cx="0" cy="260" r="14" fill="url(#cyan-glow)" />
+      <!-- Focal Beam Core -->
+      <circle cx="0" cy="260" r="5" fill="#ffffff" />
+
+      <!-- Crosshair Telemetry Laser Vectors -->
+      <line x1="-65" y1="260" x2="-46" y2="260" stroke="#00f5ff" stroke-width="2" />
+      <line x1="46" y1="260" x2="65" y2="260" stroke="#00f5ff" stroke-width="2" />
+      <line x1="0" y1="190" x2="0" y2="210" stroke="#00f5ff" stroke-width="2" />
+      <line x1="0" y1="310" x2="0" y2="330" stroke="#00f5ff" stroke-width="2" />
+
+    </g>
+  </g>
+</svg>`;
+}
+
+async function run() {
+  const outputDir = path.resolve(__dirname, '../docs/images');
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const svg = buildLogoSvg();
+  const svgPath = path.join(outputDir, 'logo.svg');
+  const pngPath = path.join(outputDir, 'logo.png');
+
+  fs.writeFileSync(svgPath, svg, 'utf-8');
+  console.log('✓ Written docs/images/logo.svg');
+
+  // Render to 1024x1024 PNG using headless Chrome
+  const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  const htmlWrapper = path.join(outputDir, 'render_logo.html');
+  fs.writeFileSync(htmlWrapper, `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1024px; height: 1024px; background: transparent; overflow: hidden; }
+    img { width: 1024px; height: 1024px; display: block; }
+  </style>
+</head>
+<body>
+  <img src="logo.svg" />
+</body>
+</html>`, 'utf-8');
+
+  try {
+    const cmd = `"${chromePath}" --headless --disable-gpu --force-device-scale-factor=1 --window-size=1024,1024 --screenshot="${pngPath}" "file:///${htmlWrapper.replace(/\\/g, '/')}"`;
+    execSync(cmd, { stdio: 'inherit' });
+    console.log('✓ Successfully rendered docs/images/logo.png at 1024x1024');
+  } catch (err) {
+    console.error('Failed to render PNG via Chrome:', err);
+  } finally {
+    if (fs.existsSync(htmlWrapper)) {
+      fs.unlinkSync(htmlWrapper);
+    }
+  }
+}
+
+run();

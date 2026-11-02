@@ -1,6 +1,77 @@
-# IndexLens
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="IndexLens Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-IndexLens is a non-invasive PostgreSQL slow query explainer, autovacuum watchdog, and missing index synthesizer. It runs as a self-contained local binary or daemon, reading statistics directly from `pg_stat_statements` and PostgreSQL system catalog views with zero overhead on production workloads.
+<h1 align="center">IndexLens</h1>
+
+<p align="center">
+  <strong>Non-invasive PostgreSQL slow query explainer, autovacuum watchdog, and missing index synthesizer.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/alexandrmotologa/indexlens/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT" /></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/badge/Go-1.23+-00ADD8.svg?style=flat-square&logo=go" alt="Go Version" /></a>
+  <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB.svg?style=flat-square&logo=react" alt="React 19" /></a>
+  <a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-14+-4169E1.svg?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 14+" /></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/indexlens_demo.gif?raw=true" alt="IndexLens Interactive Studio Demo" width="100%" />
+</p>
+
+IndexLens is an open-source, non-invasive PostgreSQL slow query explainer, autovacuum watchdog, and missing index synthesizer. It runs as a self-contained local binary or daemon, reading statistics directly from `pg_stat_statements` and PostgreSQL system catalog views with zero overhead on production workloads.
+
+## Studio Interface & Telemetry Views
+
+Authentic captures from the live IndexLens interactive studio:
+
+### 1. Slow Query Telemetry & Latency Percentiles
+Inspect top queries ranked by cumulative runtime, calls, and mean latency. Expand any query row to analyze p50, p90, p95, and p99 percentiles along with latency jitter badges.
+<p align="center">
+  <img src="docs/images/indexlens_queries.png?raw=true" alt="Slow Query Telemetry" width="100%" />
+</p>
+
+### 2. EXPLAIN Execution Flamegraph & Bottleneck Inspector
+Paste or load raw JSON execution plans to visualize cost, time distribution, and buffer cache hits across nested plan nodes. Automatic detectors highlight disk spills, sequential scans, and hash batch overflows.
+<p align="center">
+  <img src="docs/images/indexlens_explain.png?raw=true" alt="EXPLAIN Flamegraph" width="100%" />
+</p>
+
+### 3. Missing Index Synthesizer & HypoPG Simulation
+Automatically correlate table sequential scans with WHERE and JOIN filters. The synthesizer generates non-blocking `CREATE INDEX CONCURRENTLY` DDL, estimates disk footprint and write overhead, and validates cost drops via HypoPG.
+<p align="center">
+  <img src="docs/images/indexlens_advisor.png?raw=true" alt="Missing Index Synthesizer" width="100%" />
+</p>
+
+### 4. Hardware Calibration & PostgreSQL Tuner
+Calibrate critical memory parameters (`shared_buffers`, `work_mem`, `effective_cache_size`, `random_page_cost`, worker counts) based on available RAM, vCPU cores, and storage media. Generates copyable `ALTER SYSTEM` statements.
+<p align="center">
+  <img src="docs/images/indexlens_tuner.png?raw=true" alt="Hardware Configuration Tuner" width="100%" />
+</p>
+
+### 5. Schema Health & Relational Anti-Pattern Auditor
+Detect unindexed foreign keys that cause full table locks on cascading updates or deletes, find tables missing primary keys, and identify high out-of-line TOAST storage.
+<p align="center">
+  <img src="docs/images/indexlens_schema.png?raw=true" alt="Schema Health Auditor" width="100%" />
+</p>
+
+### 6. Connection Pool & Saturation Health
+Track active and idle connection counts, receive early warnings on leaked `idle in transaction` sessions, and calculate recommended PgBouncer pool sizing using physical CPU core counts.
+<p align="center">
+  <img src="docs/images/indexlens_pool.png?raw=true" alt="Connection Pool Health" width="100%" />
+</p>
+
+### 7. Table Bloat & Autovacuum Guard
+Monitor dead tuple ratios, estimate wasted disk space from MVCC update churn, track running autovacuum workers, and alert before Transaction ID (TxID) Wraparound limits are reached.
+<p align="center">
+  <img src="docs/images/indexlens_bloat.png?raw=true" alt="Table Bloat and Autovacuum Guard" width="100%" />
+</p>
+
+### 8. Responsive Mobile Experience
+Full responsive navigation with horizontal scroll tab bar and compact telemetry cards for on-call triage on mobile and tablet devices.
+<p align="center">
+  <img src="docs/images/indexlens_mobile.png?raw=true" alt="IndexLens Mobile View" width="420" />
+</p>
 
 ## Key Capabilities
 
